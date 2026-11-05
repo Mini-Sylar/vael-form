@@ -1,0 +1,63 @@
+packages:
+  - packages/*
+  - playground/*
+
+catalogs:
+  dev:
+    '@nuxt/kit': ^4.6.1
+    '@nuxt/schema': ^4.6.1
+    '@arethetypeswrong/core': ^0.18.0
+    '@vitejs/plugin-vue': ^6.0.10
+    '@vitest/browser-playwright': ^5.0.5
+    playwright: ^1.64.1
+    publint: ^0.3.0
+    tsdown: ^0.23.1
+    typescript: ^6.0.3
+    vite: ^8.3.4
+    vitest: ^5.0.5
+    vitest-browser-vue: ^3.1.0
+    # 3.3.13 breaks template type-checks.
+    vue-tsc: 3.3.11
+  frontend:
+    pinia: ^4.1.0
+    vue: 3.6.0-rc.13
+    vue-i18n: ^11.4.14
+  schemas:
+    '@standard-schema/spec': ^1.1.0
+    arktype: ^2.1.0
+    effect: ^4.1.0
+    joi: ^18.0.0
+    valibot: ^1.1.0
+    yup: ^1.7.0
+    zod: ^4.1.0
+
+allowBuilds:
+  esbuild: true
+
+overrides:
+  vue: 3.6.0-rc.13
+  '@vue/compiler-core': 3.6.0-rc.13
+  '@vue/compiler-dom': 3.6.0-rc.13
+  '@vue/compiler-sfc': 3.6.0-rc.13
+  '@vue/compiler-ssr': 3.6.0-rc.13
+  '@vue/compiler-vapor': 3.6.0-rc.13
+  '@vue/reactivity': 3.6.0-rc.13
+  '@vue/runtime-core': 3.6.0-rc.13
+  '@vue/runtime-dom': 3.6.0-rc.13
+  '@vue/runtime-vapor': 3.6.0-rc.13
+  '@vue/server-renderer': 3.6.0-rc.13
+  '@vue/shared': 3.6.0-rc.13
+
+minimumReleaseAgeExclude:
+  - vue@3.6.0-rc.13
+  - '@vue/compiler-core@3.6.0-rc.13'
+  - '@vue/compiler-dom@3.6.0-rc.13'
+  - '@vue/compiler-sfc@3.6.0-rc.13'
+  - '@vue/compiler-ssr@3.6.0-rc.13'
+  - '@vue/compiler-vapor@3.6.0-rc.13'
+  - '@vue/reactivity@3.6.0-rc.13'
+  - '@vue/runtime-core@3.6.0-rc.13'
+  - '@vue/runtime-dom@3.6.0-rc.13'
+  - '@vue/runtime-vapor@3.6.0-rc.13'
+  - '@vue/server-renderer@3.6.0-rc.13'
+  - '@vue/shared@3.6.0-rc.13'

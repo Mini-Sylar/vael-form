@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Playwright's image has Chromium and every library it needs. Keep its tag at the lockfile's Playwright version.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+    env:
+      HUSKY: 0
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # In the container the checkout belongs to another user, and git won't read a repository it
+      # doesn't own (changesets needs it to find where the branch left main).
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm install -g npm@latest
+
+      - run: pnpm install
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm typecheck
+
+      # Opens a "Version packages" PR from the changesets; merging it publishes to npm.
+      - uses: changesets/action@v2
+        with:
+          publish-script: pnpm release
+          version-script: pnpm version-packages
+          github-token: ${{ secrets.GITHUB_TOKEN }}

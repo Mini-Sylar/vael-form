@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "lib": ["esnext", "dom", "dom.iterable"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "paths": { "vael-form": ["../../packages/vael-form/src/index.ts"] }
+  },
+  "include": ["src"]
+}

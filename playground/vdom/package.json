@@ -1,0 +1,22 @@
+{
+  "name": "vdom",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "playground-shared": "workspace:*",
+    "vael-form": "workspace:*",
+    "vue": "catalog:frontend"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "catalog:dev",
+    "typescript": "catalog:dev",
+    "vite": "catalog:dev",
+    "vue-tsc": "catalog:dev"
+  }
+}

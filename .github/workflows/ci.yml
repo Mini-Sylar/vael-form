@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A newer push to the same branch or PR stops the run it replaces.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Playwright's image has Chromium and its libraries. Keep the tag at the lockfile's Playwright version.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - run: pnpm install
+      - run: pnpm test
+
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - run: pnpm install
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm build
+      - run: pnpm size
+      - run: pnpm typecheck

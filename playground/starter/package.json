@@ -1,0 +1,26 @@
+{
+  "name": "starter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:vapor": "MODE=vapor vite",
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "pinia": "catalog:frontend",
+    "vael-form": "workspace:*",
+    "vael-ui": "^0.5.0",
+    "vue": "catalog:frontend",
+    "vue-i18n": "catalog:frontend",
+    "zod": "catalog:schemas"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "catalog:dev",
+    "typescript": "catalog:dev",
+    "vite": "catalog:dev",
+    "vue-tsc": "catalog:dev"
+  }
+}

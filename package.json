@@ -1,0 +1,52 @@
+{
+  "name": "vael-form-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vue-first forms on Standard Schema, with v-model, i18n and accessibility built in; works in VDOM and Vapor.",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter vael-form build",
+    "dev": "pnpm --filter vael-form dev",
+    "test": "pnpm --filter vael-form test",
+    "typecheck": "pnpm --filter vael-form typecheck && pnpm --filter vdom typecheck && pnpm --filter vapor typecheck && pnpm --filter vapor-interop typecheck && pnpm --filter starter typecheck",
+    "size": "pnpm --filter vael-form size",
+    "play": "pnpm --filter vdom dev",
+    "play:vapor": "pnpm --filter vapor dev",
+    "play:vapor-interop": "pnpm --filter vapor-interop dev",
+    "play:starter": "pnpm --filter starter dev",
+    "play:starter:vapor": "pnpm --filter starter dev:vapor",
+    "lint": "oxlint . && eslint .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "prepare": "husky",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
+    "eslint": "^10.12.0",
+    "eslint-plugin-vue": "^10.11.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
+    "oxfmt": "^0.73.0",
+    "oxlint": "^1.88.0",
+    "typescript-eslint": "^8.71.2"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,vue}": [
+      "oxfmt",
+      "oxlint"
+    ],
+    "*.vue": [
+      "eslint"
+    ],
+    "*.{css,json,jsonc,md,yaml,yml}": [
+      "oxfmt"
+    ]
+  },
+  "packageManager": "pnpm@12.16.1"
+}

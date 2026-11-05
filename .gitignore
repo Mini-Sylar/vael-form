@@ -1,0 +1,13 @@
+node_modules
+dist
+*.local
+*.tsbuildinfo
+.DS_Store
+__screenshots__
+.vitest
+.size
+# screen recordings made while testing
+*.mov
+# copied in by the package's build, for npm
+packages/vael-form/README.md
+packages/vael-form/LICENSE

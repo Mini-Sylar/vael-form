@@ -1,0 +1,192 @@
+:root {
+  font:
+    15px/1.5 system-ui,
+    sans-serif;
+  color: #1c1c1e;
+  background: #f6f6f7;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 6rem;
+}
+nav {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+nav button[aria-current='page'] {
+  background: #1c1c1e;
+  color: #fff;
+}
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 1rem;
+}
+h2 {
+  font-size: 1.05rem;
+  margin: 1.5rem 0 0.5rem;
+}
+form,
+.card {
+  background: #fff;
+  border: 1px solid #e3e3e6;
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+label,
+.label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 0.2rem;
+}
+.field {
+  margin-bottom: 0.25rem;
+}
+input:not([type='checkbox'], [type='radio']),
+select,
+textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #c7c7cc;
+  border-radius: 8px;
+  font: inherit;
+  background: #fff;
+}
+input[aria-invalid='true'],
+select[aria-invalid='true'],
+textarea[aria-invalid='true'] {
+  border-color: #d33;
+  outline: 1px solid #d33;
+}
+.error {
+  color: #b00;
+  margin: 0.15rem 0 0.4rem;
+  min-height: 1.5em;
+  font-size: 0.9em;
+}
+.hint {
+  color: #6b6b70;
+  font-size: 0.85em;
+}
+.row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+.row > * {
+  flex: 1;
+}
+.row > .fit {
+  flex: none;
+}
+.choices {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+.choices label {
+  font-weight: 400;
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+button {
+  font: inherit;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid #c7c7cc;
+  background: #fff;
+  cursor: pointer;
+}
+button.primary {
+  background: #3b5bdb;
+  border-color: #3b5bdb;
+  color: #fff;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  align-items: center;
+}
+.steps {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.steps span {
+  padding: 0.2rem 0.7rem;
+  border-radius: 99px;
+  background: #ececef;
+  font-size: 0.85em;
+}
+.steps span.on {
+  background: #3b5bdb;
+  color: #fff;
+}
+.steps span.bad::after {
+  content: ' !';
+  color: #d33;
+  font-weight: 700;
+}
+.summary {
+  background: #fee;
+  border-radius: 8px;
+  padding: 0.5rem 1.5rem;
+  margin-bottom: 1rem;
+}
+.badge {
+  font-size: 0.75em;
+  padding: 0.1rem 0.5rem;
+  border-radius: 99px;
+  background: #fff3bf;
+}
+.ok {
+  background: #d3f9d8;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  margin-top: 0.75rem;
+}
+pre.debug {
+  background: #1c1c1e;
+  color: #d0d0d5;
+  padding: 0.75rem;
+  border-radius: 8px;
+  overflow: auto;
+  font-size: 0.78em;
+}
+dialog {
+  border: 0;
+  border-radius: 12px;
+  padding: 1.25rem;
+  width: min(30rem, 92vw);
+}
+dialog::backdrop {
+  background: #0006;
+}
+.item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.item > :first-child {
+  flex: 1;
+}
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
