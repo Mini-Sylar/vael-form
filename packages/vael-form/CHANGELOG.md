@@ -1,5 +1,13 @@
 # vael-form
 
+## 0.0.2
+
+### Patch Changes
+
+- [#1](https://github.com/Mini-Sylar/vael-form/pull/1) [`c56a7bc`](https://github.com/Mini-Sylar/vael-form/commit/c56a7bc555e3ad0843470a10e7c99e38f6b613cc) Thanks [@Mini-Sylar](https://github.com/Mini-Sylar)! - The library's code is unchanged. Its development dependencies no longer have `pnpm audit` advisories (`glob` and `minimatch`), and this release is published from GitHub Actions with npm trusted publishing, so it carries provenance.
+
+- [#2](https://github.com/Mini-Sylar/vael-form/pull/2) [`185f6bd`](https://github.com/Mini-Sylar/vael-form/commit/185f6bd771ea2dc323e1093e14537a6aabf8ddd8) Thanks [@Mini-Sylar](https://github.com/Mini-Sylar)! - `handleSubmit` called from code, with no submit event (from a TanStack Query `mutationFn`, a button's `@click`), focuses the first invalid field too. It finds the field by its id, or by the error id in its `aria-describedby` when a component library gives the input its own id. The README has a section on pairing a form with TanStack Query.
+
 ## 0.0.1
 
 ### Patch Changes
