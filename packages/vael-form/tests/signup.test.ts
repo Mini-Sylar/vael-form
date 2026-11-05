@@ -5,6 +5,7 @@ import { mount } from './utils/mount'
 import type { Mounted } from './utils/mount'
 import { signupSchemas, zodSignup } from './schemas'
 import Signup from './fixtures/Signup.vue'
+import LibraryField from './fixtures/LibraryField.vue'
 
 let mounted: Mounted | undefined
 afterEach(() => mounted?.unmount())
@@ -13,6 +14,26 @@ const input = (name: string) => $<HTMLInputElement>(mounted!.host, name)!
 const shown = (name: string) => text(mounted!.host, name)
 
 describe.each(Object.entries(signupSchemas))('%s schema', (_name, schema) => {
+  it('submitted from code, with no <form>, still focuses the first invalid field', async () => {
+    let form: { handleSubmit: (event?: Event) => Promise<boolean> } | undefined
+    mounted = mount(Signup, { schema, ready: (f: never) => (form = f) })
+    await type(input('password'), 'x')
+
+    expect(await form!.handleSubmit()).toBe(false)
+    await flush()
+    expect(document.activeElement).toBe(input('email'))
+  })
+
+  it('finds a field a component library renamed, by the error id it describes itself with', async () => {
+    let form: { handleSubmit: (event?: Event) => Promise<boolean> } | undefined
+    mounted = mount(LibraryField, { schema, ready: (f: never) => (form = f) })
+
+    expect(await form!.handleSubmit()).toBe(false)
+    await flush()
+    expect(document.activeElement).toBe(input('email'))
+    expect(input('email').id).toBe('library-email')
+  })
+
   it('shows nothing until the field is left, then keeps up as you type', async () => {
     mounted = mount(Signup, { schema })
     await flush()

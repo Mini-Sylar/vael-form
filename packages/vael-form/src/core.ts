@@ -568,6 +568,23 @@ export class FormCore {
   }
 
   /** Issues to show, resolved, in order. `path` limits them to one path. */
+  // Submitted from code, with no <form> to search: the first invalid input on the page, by its id
+  // or, where a component library gives it its own id, by the error id it is described by.
+  private focusFirstInvalid(): void {
+    if (typeof document === 'undefined') return
+    let first: HTMLElement | null = null
+    for (const { path } of this.shownErrors()) {
+      if (!path) continue
+      const id = `${this.id}-${path.replaceAll('.', '-')}`
+      const el =
+        document.getElementById(id) ??
+        document.querySelector<HTMLElement>(`[aria-describedby~="${CSS.escape(`${id}-error`)}"]`)
+      if (el && (!first || el.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING))
+        first = el
+    }
+    first?.focus()
+  }
+
   shownErrors(path?: string): FormError[] {
     this.activate()
     const out: FormError[] = []
@@ -745,7 +762,8 @@ export class FormCore {
       if (this.hasRules) await (await this.loadRules()).settle()
       if (!outcome.valid || this.ruleIssues.value.size) {
         await nextTick()
-        host?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+        if (host) host.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+        else this.focusFirstInvalid()
         await this.options.onInvalid?.(this.shownErrors(), context)
         return false
       }
