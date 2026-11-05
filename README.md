@@ -90,6 +90,32 @@ const onSubmit = handleSubmit(async (values, { formData }) => {
 
 An error thrown in `onSubmit` rejects `handleSubmit`; `submitting` is false again. Server errors: `form.setErrors({ email: 'Already taken' })`, cleared when that field changes.
 
+## With TanStack Query
+
+The form checks the values; a mutation sends them. As with TanStack Form, the form calls the mutation once it is valid:
+
+```ts
+const mutation = useMutation({ mutationFn: (values: Values) => api.save(values) })
+const form = useForm({ schema, onSubmit: (values) => mutation.mutateAsync(values) })
+// <form novalidate @submit="form.handleSubmit">, and mutation.isPending for the button
+```
+
+To keep calling `mutate()` (`@submit.prevent="mutate()"`), write the pairing once in a composable of your own. `handleSubmit` called from code shows every error and focuses the first invalid field, as a submit event does.
+
+```ts
+export function useFormMutation<S extends StandardSchemaV1, T>(
+  form: Form<S>,
+  mutationFn: (values: InferOutput<S>) => Promise<T>,
+) {
+  const mutation = useMutation({ mutationFn })
+  // Only valid values reach the mutation. Its errors stay on the mutation (`error`), not thrown here.
+  const submit = form.handleSubmit((values) => mutation.mutateAsync(values).catch(() => {}))
+  return { ...mutation, mutate: () => void submit() }
+}
+```
+
+A server's field errors go back with `form.setErrors` in the mutation's `onError`.
+
 ## FormData
 
 `formData` in the `onSubmit` context is the submitted values as multipart, built when you read it:
