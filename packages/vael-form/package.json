@@ -1,6 +1,6 @@
 {
   "name": "vael-form",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Vue-first forms on Standard Schema, with v-model, i18n and accessibility built in; works in VDOM and Vapor.",
   "keywords": [
     "arktype",
