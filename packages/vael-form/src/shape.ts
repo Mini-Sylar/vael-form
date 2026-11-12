@@ -1,5 +1,5 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import { isIndex } from './path'
+import { isIndex, isPlainObject } from './path'
 import type { Segments } from './path'
 
 /** What a schema says about a value, in JSON Schema's words: enough to know a group and its limits. */
@@ -84,3 +84,22 @@ export function shapeAt(root: Shape | undefined, segments: Segments): Shape | un
 
 export const isObjectShape = (shape: Shape | undefined): boolean => has(shape, 'object')
 export const isListShape = (shape: Shape | undefined): boolean => has(shape, 'array')
+
+/**
+ * The values as the schema should see them: a required group the data doesn't have yet is an
+ * empty object, so its fields report their own errors instead of the group reporting one. Returns
+ * `value` itself when nothing is missing.
+ */
+export function withGroups(shape: Shape | undefined, value: unknown): unknown {
+  if (shape?.type !== 'object' || !shape.properties) return value
+  if (value !== undefined && !isPlainObject(value)) return value
+  let out = value as Record<string, unknown> | undefined
+  for (const [key, child] of Object.entries(shape.properties)) {
+    const current = out?.[key]
+    const missing = current === undefined && !!shape.required?.includes(key)
+    if (child.type !== 'object' || (!missing && !isPlainObject(current))) continue
+    const next = withGroups(child, missing ? {} : current)
+    if (next !== current) out = { ...out, [key]: next }
+  }
+  return out ?? {}
+}
