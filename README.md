@@ -446,7 +446,7 @@ Data arriving before an edit replaces the values and clears `dirty`; after one, 
 | -------------------- | ----------------------------------------------------------------------------------- |
 | `'edited'` (default) | once the field has been changed and left. Passing over an empty field says nothing. |
 | `'blur'`             | once the field is left, even if it was never changed                                |
-| `'input'`            | as soon as the value changes                                                        |
+| `'input'`            | as soon as the value changes, or once the field is left                             |
 | `'submit'`           | only after the first submit                                                         |
 
 Give one mode for the form, or a mode per path, with `default` for the rest:

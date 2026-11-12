@@ -152,3 +152,35 @@ describe('a field that only exists for some answers', () => {
     expect(form.valid.value).toBe(true)
   })
 })
+
+describe('a step whose group has no defaults yet', () => {
+  const schemas = {
+    zod: z.object({ account: z.object({ email: z.email(), password: z.string().min(8) }) }),
+    valibot: v.object({
+      account: v.object({
+        email: v.pipe(v.string(), v.email()),
+        password: v.pipe(v.string(), v.minLength(8)),
+      }),
+    }),
+    arktype: type({ account: { email: 'string.email', password: 'string >= 8' } }),
+  }
+  for (const [name, schema] of Object.entries(schemas))
+    it(`shows the step’s field errors (${name})`, async () => {
+      const form = make({ schema: schema as StandardSchemaV1 })
+      expect(await form.validate('account')).toBe(false)
+      expect(form.errorList.value.map((e) => e.path).toSorted()).toEqual([
+        'account.email',
+        'account.password',
+      ])
+    })
+
+  it('leaves an optional group out, and the values as they are', async () => {
+    const form = make({
+      schema: z.object({ name: z.string(), extra: z.object({ note: z.string() }).optional() }),
+      defaultValues: { name: 'Ada' },
+    })
+    expect(await form.validate()).toBe(true)
+    expect(form.values.value).toEqual({ name: 'Ada' })
+    expect(form.dirty.value).toBe(false)
+  })
+})

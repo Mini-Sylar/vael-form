@@ -30,7 +30,7 @@ import {
   toSegments,
 } from './path'
 import type { Segments } from './path'
-import { isObjectShape, shapeAt, shapeOf } from './shape'
+import { isObjectShape, shapeAt, shapeOf, withGroups } from './shape'
 import type { Shape } from './shape'
 import type { limitsAt } from './limits'
 import type {
@@ -706,7 +706,7 @@ export class FormCore {
       }
       return result.issues ? { valid: false, issues } : { valid: true, value: result.value, issues }
     }
-    const result = this.schema['~standard'].validate(snapshotOfValues)
+    const result = this.schema['~standard'].validate(withGroups(this.shapeAt([]), snapshotOfValues))
     if (!isPromise(result)) return done(result)
     this.pendingRef.value++
     return Promise.resolve(result).then(
