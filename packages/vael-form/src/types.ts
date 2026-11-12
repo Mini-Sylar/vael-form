@@ -170,6 +170,15 @@ export type FieldAttrs = {
   readonly onFocusout: (event?: FocusEvent) => void
   /** The id for the element that shows the error (`aria-describedby` points at it). Not spread onto the input. */
   readonly errorId: string
+  /** From the schema, once it has loaded (Zod, Valibot, ArkType): a value that can't be left empty. */
+  readonly 'aria-required'?: true
+  /** From the schema: a text value's length limits. */
+  readonly minlength?: number
+  readonly maxlength?: number
+  /** From the schema: a number's limits, and `multipleOf` as the step. */
+  readonly min?: number
+  readonly max?: number
+  readonly step?: number
 }
 
 /** What `field.watch` hands its handler. */
@@ -288,7 +297,7 @@ export type ModelRef<T> = Ref<T> & {
 /** `form.model`: a ref per top-level field; any name when the schema doesn't say. */
 export type FormModel<I> = unknown extends I
   ? Record<string, ModelRef<any>>
-  : { readonly [K in keyof I & string]-?: ModelRef<ModelFor<I[K]>> }
+  : { readonly [K in KeysOfUnion<I> & string]-?: ModelRef<ModelFor<ValueOfKey<I, K>>> }
 
 /** `errors` and `attrs`: the schema's shape with `L` at each field (a list is one field). */
 type Tree<T, L> = unknown extends T

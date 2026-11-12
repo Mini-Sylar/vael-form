@@ -260,3 +260,23 @@ export type c20 = [
 ]
 const modelForm = useForm({ schema: mdl, defaultValues: { name: '' } })
 export const modelName: ModelRef<string | undefined> = modelForm.model.name
+// a discriminated union at the top: model has every branch's fields, like errors and attrs
+const payModel = useForm({
+  schema: z.discriminatedUnion('method', [
+    z.object({ method: z.literal('card'), number: z.string() }),
+    z.object({ method: z.literal('bank'), iban: z.string() }),
+  ]),
+  defaultValues: { method: 'card', number: '' },
+})
+export type c30 = [
+  Expect<Equal<typeof payModel.model.number, ModelRef<string | undefined>>>,
+  Expect<Equal<typeof payModel.model.iban, ModelRef<string | undefined>>>,
+  Expect<Equal<typeof payModel.model.method, ModelRef<'card' | 'bank' | undefined>>>,
+]
+// attrs carries the schema's limits
+const limited = useForm({ schema: z.object({ title: z.string().max(40), n: z.number().min(1) }) })
+export type c31 = [
+  Expect<Equal<typeof limited.attrs.title.maxlength, number | undefined>>,
+  Expect<Equal<typeof limited.attrs.n.min, number | undefined>>,
+  Expect<Equal<(typeof limited.attrs.title)['aria-required'], true | undefined>>,
+]
