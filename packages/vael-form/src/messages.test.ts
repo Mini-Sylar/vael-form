@@ -148,6 +148,13 @@ describe.each(Object.entries(schemas))('%s, with the app’s own catalog', (_, s
     expect(text.role).toBe(rules.option)
   })
 
+  it('counts a choice not made, or a cleared select, as not given', async () => {
+    for (const role of [undefined, '']) {
+      const { text } = await errorsFor(schema, { ...initial, role })
+      expect(text.role).toBe('Role is required')
+    }
+  })
+
   it('counts an empty text input under a number as not given', async () => {
     const { text } = await errorsFor(schema, { ...initial, age: '' })
     expect(text.age).toBe('Age is required')

@@ -101,6 +101,9 @@ const ZOD_PARAMS = [
   'keys',
 ] as const
 
+/** A choice not made yet: nothing picked, or a cleared select. */
+const unchosen = (value: unknown): boolean => value === undefined || value === null || value === ''
+
 /** An empty text input where something else is expected is a value not given yet. */
 const unfilled = (value: unknown, expected: string): boolean =>
   value === '' && expected !== 'string'
@@ -132,6 +135,8 @@ function zod(issue: Loose, prefix: string, value: unknown): Described | undefine
       issue[code === 'too_small' ? 'minimum' : 'maximum'],
       params,
     )
+  if (code === 'invalid_value')
+    return { keys: keysFor(prefix, code, undefined, unchosen(value)), params }
   let format: string | undefined
   if (code === 'invalid_format') {
     if (typeof validation === 'object' && validation) {
@@ -161,7 +166,8 @@ function valibot(issue: Loose, prefix: string): Described | undefined {
   }
   if (VALIBOT_CUSTOM.has(type)) return { keys: keysFor(prefix, 'custom'), params }
   if (issue.kind === 'schema') {
-    if (VALIBOT_VALUES.has(type)) return { keys: keysFor(prefix, 'invalid_value'), params }
+    if (VALIBOT_VALUES.has(type))
+      return { keys: keysFor(prefix, 'invalid_value', undefined, unchosen(issue.input)), params }
     const missing = issue.input === undefined || issue.input === null || unfilled(issue.input, type)
     return {
       keys: keysFor(prefix, 'invalid_type', type, missing),
@@ -230,12 +236,20 @@ function arktype(issue: Loose, prefix: string): Described | undefined {
       return { keys: keysFor(prefix, 'invalid_format', format), params: { format } }
     }
     case 'unit':
-      return { keys: keysFor(prefix, 'invalid_value'), params: {} }
+      return { keys: keysFor(prefix, 'invalid_value', undefined, unchosen(data)), params: {} }
     case 'union': {
       // A choice between fixed values is an enum, as it is in the other libraries.
       const branches = ((issue as { errors?: unknown }).errors ?? []) as { code?: string }[]
       const fixed = branches.length > 0 && branches.every((branch) => branch.code === 'unit')
-      return { keys: keysFor(prefix, fixed ? 'invalid_value' : 'invalid_union'), params: {} }
+      return {
+        keys: keysFor(
+          prefix,
+          fixed ? 'invalid_value' : 'invalid_union',
+          undefined,
+          fixed && unchosen(data),
+        ),
+        params: {},
+      }
     }
     case 'predicate':
       return { keys: keysFor(prefix, 'custom'), params: {} }
