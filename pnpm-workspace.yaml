@@ -20,7 +20,7 @@ catalogs:
     vue-tsc: 3.3.11
   frontend:
     pinia: ^4.1.0
-    vue: 3.6.0-rc.13
+    vue: 3.6.0-rc.16
     vue-i18n: ^11.4.14
   schemas:
     '@standard-schema/spec': ^1.1.0
@@ -38,29 +38,29 @@ overrides:
   # Security: lift only the vulnerable ranges of transitive dev deps (pnpm audit).
   'glob@>=9.0.0 <14.0.2': ^14.0.2
   'minimatch@>=7.0.0 <11.0.1': ^11.0.1
-  vue: 3.6.0-rc.13
-  '@vue/compiler-core': 3.6.0-rc.13
-  '@vue/compiler-dom': 3.6.0-rc.13
-  '@vue/compiler-sfc': 3.6.0-rc.13
-  '@vue/compiler-ssr': 3.6.0-rc.13
-  '@vue/compiler-vapor': 3.6.0-rc.13
-  '@vue/reactivity': 3.6.0-rc.13
-  '@vue/runtime-core': 3.6.0-rc.13
-  '@vue/runtime-dom': 3.6.0-rc.13
-  '@vue/runtime-vapor': 3.6.0-rc.13
-  '@vue/server-renderer': 3.6.0-rc.13
-  '@vue/shared': 3.6.0-rc.13
+  vue: 3.6.0-rc.16
+  '@vue/compiler-core': 3.6.0-rc.16
+  '@vue/compiler-dom': 3.6.0-rc.16
+  '@vue/compiler-sfc': 3.6.0-rc.16
+  '@vue/compiler-ssr': 3.6.0-rc.16
+  '@vue/compiler-vapor': 3.6.0-rc.16
+  '@vue/reactivity': 3.6.0-rc.16
+  '@vue/runtime-core': 3.6.0-rc.16
+  '@vue/runtime-dom': 3.6.0-rc.16
+  '@vue/runtime-vapor': 3.6.0-rc.16
+  '@vue/server-renderer': 3.6.0-rc.16
+  '@vue/shared': 3.6.0-rc.16
 
 minimumReleaseAgeExclude:
-  - vue@3.6.0-rc.13
-  - '@vue/compiler-core@3.6.0-rc.13'
-  - '@vue/compiler-dom@3.6.0-rc.13'
-  - '@vue/compiler-sfc@3.6.0-rc.13'
-  - '@vue/compiler-ssr@3.6.0-rc.13'
-  - '@vue/compiler-vapor@3.6.0-rc.13'
-  - '@vue/reactivity@3.6.0-rc.13'
-  - '@vue/runtime-core@3.6.0-rc.13'
-  - '@vue/runtime-dom@3.6.0-rc.13'
-  - '@vue/runtime-vapor@3.6.0-rc.13'
-  - '@vue/server-renderer@3.6.0-rc.13'
-  - '@vue/shared@3.6.0-rc.13'
+  - vue@3.6.0-rc.16
+  - '@vue/compiler-core@3.6.0-rc.16'
+  - '@vue/compiler-dom@3.6.0-rc.16'
+  - '@vue/compiler-sfc@3.6.0-rc.16'
+  - '@vue/compiler-ssr@3.6.0-rc.16'
+  - '@vue/compiler-vapor@3.6.0-rc.16'
+  - '@vue/reactivity@3.6.0-rc.16'
+  - '@vue/runtime-core@3.6.0-rc.16'
+  - '@vue/runtime-dom@3.6.0-rc.16'
+  - '@vue/runtime-vapor@3.6.0-rc.16'
+  - '@vue/server-renderer@3.6.0-rc.16'
+  - '@vue/shared@3.6.0-rc.16'
