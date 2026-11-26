@@ -170,7 +170,7 @@ export type FieldAttrs = {
   readonly onFocusout: (event?: FocusEvent) => void
   /** The id for the element that shows the error (`aria-describedby` points at it). Not spread onto the input. */
   readonly errorId: string
-  /** From the schema, once it has loaded (Zod, Valibot, ArkType): a value that can't be left empty. */
+  /** From the schema, once it has loaded (Zod 4, Valibot, ArkType): a value that can't be left empty. */
   readonly 'aria-required'?: true
   /** From the schema: a text value's length limits. */
   readonly minlength?: number
@@ -225,7 +225,7 @@ export interface Field<T = unknown> {
   /** Validates the form, shows this field's errors, and says whether it's valid. */
   validate(): Promise<boolean>
   touch(): void
-  /** Forgets that the field was touched, and hides its errors until it is left again. */
+  /** Forgets that the field was touched, and hides its errors until it is left again, after a submit too. */
   untouch(): void
   reset(value?: T): void
 }
@@ -397,7 +397,7 @@ interface FormShape<S extends StandardSchemaV1> {
   validate(path?: Path<InferInput<S>>): Promise<boolean>
   /**
    * The handler for `<form @submit>`. It prevents the default and validates; when valid it calls
-   * `onSubmit` with the schema's output, otherwise it focuses the first invalid field and calls
+   * `onSubmit` with the schema's output, otherwise it focuses the first invalid field (a group's checked radio or first control) and calls
    * `onInvalid`. Says whether the form was valid.
    */
   handleSubmit(event?: Event): Promise<boolean>
@@ -410,7 +410,7 @@ interface FormShape<S extends StandardSchemaV1> {
   ): (event?: Event) => Promise<boolean>
   /** Back to the default values (or `values`, which become the new defaults), with nothing touched. */
   reset(values?: DeepPartial<InferInput<S>>): void
-  /** Errors from outside the schema, like a server's. A field's next change clears its own. */
+  /** Errors from outside the schema, like a server's. A change clears those at its path and on the groups above it; the form's own wait for the next submit. */
   setErrors(errors: ServerErrors<InferInput<S>>): void
   clearErrors(): void
 }
