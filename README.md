@@ -1,6 +1,6 @@
 # vael-form
 
-Vue-first forms on [Standard Schema](https://standardschema.dev): Zod, Valibot, ArkType, Yup, Joi, Effect... No components, and no dependency on vael-ui: it works with plain inputs and with any component library. Works in VDOM and Vapor. About 8.2 KB gzipped, plus small chunks that load only when a form needs them (`rules`, the i18n catalog, the schema's limits).
+Vue-first forms on [Standard Schema](https://standardschema.dev): Zod, Valibot, ArkType, Yup, Joi, Effect... No components, and no dependency on vael-ui: it works with plain inputs and with any component library. Works in VDOM and Vapor. About 8.6 KB gzipped, plus small chunks that load only when a form needs them (`rules`, the i18n catalog, the schema's limits).
 
 ```vue
 <script setup lang="ts">
@@ -35,7 +35,7 @@ That is the whole shape. One schema is the truth and always runs; `showErrors` o
 | **Field**   | what `field(path)` gives, for the rare cases: `value`, `error`, `touched`, `dirty`, `valid`, `pending`, `attrs`, `touch()`, `untouch()`, `validate()`, `reset()`, `watch()`, and for a list `items`, `push`, `insert`, `remove`, `move`, `swap`, `replace`, `clear`   |
 
 - `model` is a ref for each field (below), `errors.email` the message to show, `attrs.email` what to spread on the input: `id`, `name`, `aria-invalid`, `aria-describedby` and `onFocusout` (which marks the field as left). Nested fields are nested: `errors.address.street`, `attrs.address.street`. A list is one field (`errors.tags`); its rows and operations are on `field('members')`.
-- `handleSubmit` is the handler for `@submit`: it prevents the default, validates, focuses the first `[aria-invalid="true"]`, calls `onSubmit` (or `onInvalid`), and ignores a second submit while one runs.
+- `handleSubmit` is the handler for `@submit`: it prevents the default, validates, focuses the first `[aria-invalid="true"]` (in a group, its checked radio or its first control), calls `onSubmit` (or `onInvalid`), and ignores a second submit while one runs.
 - `valid`, `dirty`, `touched`, `pending`, `submitting`, `submitCount` and `values` are refs, so you can destructure them and use them in a template without `.value`. `errorList` is the shown errors, for a summary; `allErrors` is everything, shown or not. A group's own error ("add at least one member") and an error no field owns (a `.refine` without a path) are `field('members').error` and `field('').error`.
 
 ## v-model
@@ -58,7 +58,7 @@ const { email, address, tags } = model // refs: destructure them
 </fieldset>
 ```
 
-- A group is a ref to an object you can write to (`address.street`), and a list is a ref to an array, so `v-model="row.name"` works in a `v-for` and a checkbox group works as in plain Vue. With Zod, Valibot or ArkType a group is there before the data has it, read from the schema; with another library, give it a default (`address: {}`).
+- A group is a ref to an object you can write to (`address.street`), and a list is a ref to an array, so `v-model="row.name"` works in a `v-for` and a checkbox group works as in plain Vue. With Zod 4, Valibot or ArkType a group is there before the data has it, read from the schema; with Zod Mini, Zod 3 or another library, give it a default (`address: {}`).
 - Every write is a `setValue`: `dirty`, the errors and `watch` behave as for any edit.
 - Destructure `model` as above. Reading `model.address.street` without destructuring, in a template, doesn't unwrap (Vue unwraps top-level refs only).
 - In the script, a ref is a ref: `email.value`. In the template it is the value.
@@ -73,7 +73,8 @@ const { email, address, tags } = model // refs: destructure them
 ```
 
 ```ts
-onSubmit: (values, { submitter }) => api.save(values, submitter?.value)
+onSubmit: (values, { submitter }) =>
+  api.save(values, (submitter as HTMLButtonElement | null)?.value)
 ```
 
 Without `onSubmit`, or to do something different for one form element or button, pass your own function: `handleSubmit(fn)` returns the handler for `@submit`, and `fn` gets the same values and context. It replaces `onSubmit` for that handler. Make the handler in the script; an inline `@submit="handleSubmit(fn)"` would only create it, not run it.
@@ -88,7 +89,7 @@ const onSubmit = handleSubmit(async (values, { formData }) => {
 <form @submit="onSubmit">
 ```
 
-An error thrown in `onSubmit` rejects `handleSubmit`; `submitting` is false again. Server errors: `form.setErrors({ email: 'Already taken' })`, cleared when that field changes.
+An error thrown in `onSubmit` rejects `handleSubmit`; `submitting` is false again. Server errors: `form.setErrors({ email: 'Already taken' })`, cleared when that field (or a field inside it, or a list operation on it) changes.
 
 ## With TanStack Query
 
@@ -124,7 +125,7 @@ A server's field errors go back with `form.setErrors` in the mutation's `onError
 onSubmit: (values, { formData }) => fetch('/api/signup', { method: 'POST', body: formData })
 ```
 
-It comes from the values (the schema's output), not from the page, so steps that aren't on screen are in it, and a checkbox is `'true'` and not `'on'`. Nested values use the inputs' own names (`address.street`, `members.0.name`), `File`s stay files, dates are ISO strings, `null` and `undefined` are left out, and the pressed submit button's name and value are added, as a native submit does. For a file input, set the field yourself: `@change="avatar.value = $event.target.files[0]"`.
+It comes from the values (the schema's output), not from the page, so steps that aren't on screen are in it, and a checkbox is `'true'` and not `'on'`. Nested values use the inputs' own names (`address.street`, `members.0.name`), `File`s stay files, dates are ISO strings, `null` and `undefined` are left out, and the pressed submit button's name and value are added, as a native submit does. For a file input, set the field yourself: `@change="avatar.value = ($event.target as HTMLInputElement).files?.[0]"`.
 
 ## Rules
 
@@ -163,7 +164,7 @@ Every native input binds with `v-model` plus `attrs`:
 | checkbox group                      | a list field: `v-model="x"` on each checkbox with its own `:value` |
 | radio group                         | `v-model="x"` on each radio with its own `:value`                  |
 
-A group of checkboxes or radios has one `id` and one error, so `attrs.x` goes on the wrapping `<fieldset>`. The field counts as left when focus leaves the group, not when it moves between its inputs. Give radios a shared `name` so the arrow keys move between them:
+A group of checkboxes or radios has one `id` and one error, so `attrs.x` goes on the wrapping `<fieldset>`. The field counts as left when focus leaves the group, not when it moves between its inputs, and a failed submit focuses the group's checked radio, or its first enabled input. Give radios a shared `name` so the arrow keys move between them:
 
 ```vue
 <fieldset v-bind="attrs.tags">
@@ -176,7 +177,7 @@ A group of checkboxes or radios has one `id` and one error, so `attrs.x` goes on
 
 ### Limits from the schema
 
-`attrs` also carries what the schema says about the input: `minlength` and `maxlength` for text, `min`, `max` and `step` for numbers, and `aria-required` for a value that can't be left empty (a required string with a minimum, a required number; not a boolean, nor a plain string, which may be `''`). A `maxlength` stops the typing at the limit, so that error rarely needs showing. It works with Zod, Valibot and ArkType, and its code is a small chunk loaded when attrs are first read.
+`attrs` also carries what the schema says about the input: `minlength` and `maxlength` for text, `min`, `max` and `step` for numbers, and `aria-required` for a value that can't be left empty (a required string with a minimum, a required number; not a boolean, nor a plain string, which may be `''`). A `maxlength` stops the typing at the limit, so that error rarely needs showing. It works with Zod 4, Valibot and ArkType (not Zod Mini or Zod 3, which can't describe their schemas), and its code is a small chunk loaded when attrs are first read.
 
 ## Component libraries
 
@@ -249,7 +250,7 @@ export const signup = validator<Values>({ email: [required, email], age: min(18)
 
 ## Schema libraries
 
-Zod 4, Zod Mini, Zod 3, Valibot and ArkType map their errors to your catalog. Any other Standard Schema library works too, with its own message text; use `msg` for translated ones. Yup, Joi and Effect are tested (errors land on the right field and list row, and `msg` translates). Two things to know: Joi stops at the first problem unless the schema ends with `.prefs({ abortEarly: false })`, and an Effect schema becomes a Standard Schema with `Schema.toStandardSchemaV1(schema)`.
+Zod 4, Zod Mini, Zod 3, Valibot and ArkType map their errors to your catalog. Any other Standard Schema library works too, with its own message text; use `msg` for translated ones. Yup, Joi and Effect are tested (errors land on the right field and list row, and `msg` translates). Two things to know: Joi stops at the first problem unless the schema ends with `.prefs({ abortEarly: false })`, and an Effect schema becomes a Standard Schema with `Schema.toStandardSchemaV1(schema)` (Effect 4; `Schema.standardSchemaV1(schema)` in Effect 3).
 
 ## Nuxt
 
@@ -429,14 +430,14 @@ Watch out for one thing: `defaultValues` follows its source only while the form 
 
 ## Default values that load later
 
-Pass a ref (from `useFetch`, a query, or your own). The form is usable while it's `undefined`, takes the data when it arrives, and keeps what the user already typed. Nested groups (`notify.email`) work while it's loading, with Zod, Valibot or ArkType; with another schema library, give them a default.
+Pass a ref (from `useFetch`, a query, or your own). The form is usable while it's `undefined`, takes the data when it arrives, and keeps what the user already typed. Nested groups (`notify.email`) work while it's loading, with Zod 4, Valibot or ArkType; with Zod Mini, Zod 3 or another schema library, give them a default.
 
 ```ts
 const { data: user } = useQuery(...)
 const form = useForm({ schema, defaultValues: user })
 ```
 
-Data arriving before an edit replaces the values and clears `dirty`; after one, the user's edit wins (`form.reset(user.value)` overwrites on purpose). After a save, `form.reset(saved)` makes the saved values the new defaults. Show a skeleton with the query's own `isLoading`; with Suspense, `defaultValues: await load()` is a plain value.
+Data arriving before an edit replaces the values and clears `dirty`; after one, the user's edit wins (`form.reset(user.value)` overwrites on purpose). After a save, `form.reset(form.values.value)` makes what was saved the new defaults. Show a skeleton with the query's own `isLoading`; with Suspense, `defaultValues: await load()` is a plain value.
 
 ## When errors show
 
@@ -479,7 +480,7 @@ An error that appears pushes what is below it down, and a button that moves betw
 }
 ```
 
-Paths complete from the schema. A group covers everything under it, and the nearest path wins (`'members.0.name': 'input'` beats `members`). `app.use(formPlugin, { showErrors })` sets the default for every form; a form's own `showErrors` replaces it, it isn't merged. `field.untouch()` hides a field's errors again until it is left once more.
+Paths complete from the schema. A group covers everything under it, and the nearest path wins (`'members.0.name': 'input'` beats `members`). `app.use(formPlugin, { showErrors })` sets the default for every form; a form's own `showErrors` replaces it, it isn't merged. `field.untouch()` hides a field's errors again, after a submit too, until it is left once more (or the next submit).
 
 ## Paths
 
@@ -521,7 +522,7 @@ app.use(i18n)
 app.use(formPlugin, { i18n: i18n.global }) // vue-i18n in either mode, or { t, locale } over any catalog
 ```
 
-That is the whole connection. Your schemas stay as they are (`z.string().min(8)`, `v.pipe(v.string(), v.email())`, `type({ name: 'string >= 3' })`): Zod, Valibot and ArkType return what went wrong, and the form looks up the matching key in your catalog when it shows the error. A locale switch updates the errors already on screen, without validating again.
+That is the whole connection. Your schemas stay as they are (`z.string().min(8)`, `v.pipe(v.string(), v.email())`, `type({ name: 'string >= 3' })`): Zod, Valibot and ArkType return what went wrong, and the form looks up the matching key in your catalog when it shows the error. A locale switch checks again and updates the errors already on screen.
 
 Copy this into your locale files, then translate the values:
 
@@ -573,7 +574,7 @@ Copy this into your locale files, then translate the values:
 
 You don't need all of it. The form tries the most specific key first (`tooSmall.string`, then `tooSmall.default`), and a key your catalog lacks shows the schema library's own text. `required` is used for a missing value, for an empty string or list under `min(1)`, and for an empty text input where a number or date is expected.
 
-Every message gets `{field}`: the label you give (`labels: { email: 'labels.email' }`, itself translated), or the field name made readable (`firstName` is "First name"). The values are `{minimum}`, `{maximum}`, `{expected}`, `{format}`, `{divisor}`, `{keys}` and `{count}`, which picks the plural form where the library has one.
+Every message gets `{field}`: the label you give (`labels: { email: 'labels.email' }`, itself translated), or the field name made readable (`firstName` is "First name"). Every message also gets `{path}`. The others depend on the error: `{minimum}`, `{maximum}`, `{expected}`, `{format}`, `{divisor}`, `{keys}`, `{values}`, `{origin}`, Zod's `{prefix}`, `{suffix}` and `{includes}` (Valibot gives these as `{requirement}`), and `{count}`, which picks the plural form where the library has one.
 
 To change one message, write it in the schema: `.min(8, 'Pick a longer name')` is shown as written. Your own keys go through `msg`, which also takes a list of keys, tried in order:
 
@@ -581,7 +582,7 @@ To change one message, write it in the schema: `.min(8, 'Pick a longer name')` i
 z.string().refine(isFree, msg('errors.taken', { name }, 'Already taken'))
 ```
 
-Keep the messages under another name with `formPlugin, { i18n, keyPrefix: 'myForms' }`. Per component tree: `provideFormConfig(computed(() => ({ i18n })))`. Per form: `useForm({ i18n })`. A schema used on its own, outside a form, keeps its library's default text. Keys for `msg` complete once you register them:
+Keep the messages under another name with `formPlugin, { i18n, keyPrefix: 'myForms' }`. Per component tree: `provideFormConfig(computed(() => ({ i18n })))`, which replaces the app's config there (it isn't merged). Per form: `useForm({ i18n })`. A schema used on its own, outside a form, keeps its library's default text. Keys for `msg` complete once you register them:
 
 ```ts
 declare module 'vael-form' {

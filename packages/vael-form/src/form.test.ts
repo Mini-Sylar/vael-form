@@ -328,6 +328,29 @@ describe('server issues', () => {
     expect(form.field('name').error).toBeUndefined()
   })
 
+  it('clears a group’s error when a field inside it changes, and keeps the form’s own', async () => {
+    const nested = z.object({ address: z.object({ street: z.string(), city: z.string() }) })
+    const form = make({ schema: nested, defaultValues: { address: { street: '', city: '' } } })
+    form.setErrors({ address: 'Not deliverable', 'address.city': 'Unknown city' })
+    form.setErrors([{ message: 'Try again' }])
+    form.field('address.street').value = '1 Main St'
+    expect(form.field('address').error).toBeUndefined()
+    expect(form.field('address.city').error).toBe('Unknown city') // a sibling is not answered
+    expect(form.field('').error).toBe('Try again')
+  })
+
+  it('clears a list’s error on a list change, and moves the rows’ errors with them', async () => {
+    const form = make({
+      schema,
+      defaultValues: { ...base, members: [{ name: 'a' }, { name: 'b' }] },
+    })
+    form.setErrors({ members: 'Too many members', 'members.1.name': 'Taken' })
+    const members = form.field('members')
+    members.remove(0)
+    expect(members.error).toBeUndefined()
+    expect(members.items[0]!.field.name.error).toBe('Taken')
+  })
+
   it('takes standard issue lists, and clears on a submit', async () => {
     const form = make({ schema, defaultValues: { ...base, name: 'Ada' } })
     form.setErrors([{ path: 'name', message: 'Nope' }, { message: 'Form-wide' }])

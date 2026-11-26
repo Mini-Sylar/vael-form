@@ -66,6 +66,17 @@ const isPromise = (value: unknown): value is PromiseLike<unknown> =>
   typeof value === 'object' &&
   typeof (value as PromiseLike<unknown>).then === 'function'
 
+const enabled = (el: HTMLElement) => el.tabIndex >= 0 && !el.matches(':disabled')
+
+/** Focuses an invalid field; a group that can't take focus passes it to its checked radio, else its first enabled control. */
+function focus(el: HTMLElement | null): void {
+  if (el && !enabled(el)) {
+    const inside = [...el.querySelectorAll<HTMLInputElement>('*')].filter(enabled)
+    el = inside.find((input) => input.type === 'radio' && input.checked) ?? inside[0] ?? null
+  }
+  el?.focus()
+}
+
 function remapKey(key: string, prefix: string, remap: (index: number) => number | null) {
   if (!key.startsWith(prefix)) return key
   const rest = key.slice(prefix.length)
@@ -111,7 +122,7 @@ export class FormCore {
   readonly serverMap: ShallowRef<IssueMap> = shallowRef(EMPTY_ISSUES)
   readonly touchedSet: ShallowRef<ReadonlySet<string>> = shallowRef(EMPTY_SET)
   readonly revealedSet: ShallowRef<ReadonlySet<string>> = shallowRef(EMPTY_SET)
-  /** Rows added since the last submit or step check: a submit that didn't include them shows nothing for them. */
+  /** Paths held back from the last submit or step check (rows added since, fields untouched since): they earn their errors again. */
   readonly freshSet: ShallowRef<ReadonlySet<string>> = shallowRef(EMPTY_SET)
   /** Paths the user changed (or `setValue` did): what `showErrors: 'edited'` waits for. */
   readonly editedSet: ShallowRef<ReadonlySet<string>> = shallowRef(EMPTY_SET)
@@ -195,7 +206,7 @@ export class FormCore {
 
   private shapes = new WeakMap<object, Shape | null>()
 
-  /** What the schema says is at `segments`, when its library can say (Zod, Valibot, ArkType). */
+  /** What the schema says is at `segments`, when its library can say (Zod 4, Valibot, ArkType). */
   shapeAt(segments: Segments): Shape | undefined {
     const schema = this.schema
     let root = this.shapes.get(schema)
@@ -449,6 +460,8 @@ export class FormCore {
       const added = order.flatMap((from, to) => (from < 0 ? `${path}.${to}` : []))
       this.freshSet.value = new Set([...this.freshSet.value, ...added])
     }
+    // The rows' server errors moved with them; a list change clears the list's own and its groups'.
+    this.dropServer(path, false)
     this.markEdited(path)
     this.touch(path)
   }
@@ -484,6 +497,8 @@ export class FormCore {
     }
     this.touchedSet.value = drop(this.touchedSet.value)
     this.revealedSet.value = drop(this.revealedSet.value)
+    // Held back from a submit or step check already made, so its errors wait until it is left again.
+    this.freshSet.value = new Set(this.freshSet.value).add(path)
     if (edits) this.editedSet.value = drop(this.editedSet.value)
   }
 
@@ -567,7 +582,6 @@ export class FormCore {
     )
   }
 
-  /** Issues to show, resolved, in order. `path` limits them to one path. */
   // Submitted from code, with no <form> to search: the first invalid input on the page, by its id
   // or, where a component library gives it its own id, by the error id it is described by.
   private focusFirstInvalid(): void {
@@ -582,9 +596,10 @@ export class FormCore {
       if (el && (!first || el.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING))
         first = el
     }
-    first?.focus()
+    focus(first)
   }
 
+  /** Issues to show, resolved, in order. `path` limits them to one path. */
   shownErrors(path?: string): FormError[] {
     this.activate()
     const out: FormError[] = []
@@ -665,13 +680,15 @@ export class FormCore {
     return [...map.values()].flat()
   }
 
-  private dropServer(path: string): void {
+  /** A change at `path` clears the server's errors there, on the groups above it and (`below`) under it; the form's own stays. */
+  private dropServer(path: string, below = true): void {
     const map = this.serverMap.value
     if (!map.size) return
     const prefix = `${path}.`
     let next: Map<string, readonly RawIssue[]> | undefined
     for (const key of map.keys())
-      if (key === path || key.startsWith(prefix)) (next ??= new Map(map)).delete(key)
+      if (key && (path === key || path.startsWith(`${key}.`) || (below && key.startsWith(prefix))))
+        (next ??= new Map(map)).delete(key)
     if (next) this.serverMap.value = next
   }
 
@@ -762,7 +779,7 @@ export class FormCore {
       if (this.hasRules) await (await this.loadRules()).settle()
       if (!outcome.valid || this.ruleIssues.value.size) {
         await nextTick()
-        if (host) host.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+        if (host) focus(host.querySelector<HTMLElement>('[aria-invalid="true"]'))
         else this.focusFirstInvalid()
         await this.options.onInvalid?.(this.shownErrors(), context)
         return false

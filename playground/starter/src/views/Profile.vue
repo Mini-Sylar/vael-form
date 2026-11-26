@@ -7,9 +7,7 @@
       <TextField :field="field('email')" label="Email" type="email" />
     </div>
     <div class="field">
-      <label :for="attrs.bio.id"
-        >Bio <span class="hint">{{ left }} left</span></label
-      >
+      <label :for="attrs.bio.id">Bio <span class="hint">{{ left }} left</span></label>
       <textarea v-model="bio" rows="3" v-bind="attrs.bio"></textarea>
       <p :id="attrs.bio.errorId" class="error">{{ errors.bio }}</p>
     </div>

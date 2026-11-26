@@ -115,6 +115,29 @@ describe('untouch and clear', () => {
     expect(form.field('name').error).toBe('Too short')
   })
 
+  it('untouch hides the errors after a submit too, until the field is left again', async () => {
+    const form = make({ schema, defaultValues: defaults })
+    await form.handleSubmit()
+    const name = form.field('name')
+    expect(name.error).toBe('Too short')
+    name.untouch()
+    expect(name.error).toBeUndefined()
+    expect(form.field('tags').error).toBe('Add a tag') // the others stay shown
+    name.value = 'x'
+    name.touch()
+    expect(name.error).toBe('Too short')
+    name.untouch()
+    await form.handleSubmit()
+    expect(name.error).toBe('Too short') // the next submit shows it again
+  })
+
+  it('a field reset after a submit hides its errors until it is edited and left', async () => {
+    const form = make({ schema, defaultValues: defaults })
+    await form.handleSubmit()
+    form.field('name').reset()
+    expect(form.field('name').error).toBeUndefined()
+  })
+
   it('clear empties a list', async () => {
     const form = make({ schema, defaultValues: { ...defaults, tags: ['a', 'b'] } })
     form.field('tags').clear()
