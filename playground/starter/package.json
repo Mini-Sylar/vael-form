@@ -12,7 +12,7 @@
   "dependencies": {
     "pinia": "catalog:frontend",
     "vael-form": "workspace:*",
-    "vael-ui": "^0.5.0",
+    "vael-ui": "^0.5.8",
     "vue": "catalog:frontend",
     "vue-i18n": "catalog:frontend",
     "zod": "catalog:schemas"
