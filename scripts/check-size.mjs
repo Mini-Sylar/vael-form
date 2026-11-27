@@ -8,9 +8,9 @@ import { gzipSync } from 'node:zlib'
 
 const dir = '.size'
 const budgets = {
-  core: 9280,
+  core: 9376,
   rules: 1536,
-  catalog: 1856,
+  catalog: 1920,
   validator: 1280,
   limits: 1184,
   schemaRule: 512,

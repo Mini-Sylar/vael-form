@@ -25,6 +25,8 @@ export interface Shape {
   minItems?: number
   /** A literal, such as a union's discriminator. */
   const?: unknown
+  /** A branch's discriminators, its `const` properties: read once. */
+  consts?: [string, Shape][]
   /** Valibot's own schema, whose pipe holds its limits. */
   node?: Loose
   /** Valibot's `nullable` or `nullish` wrapper around this value, whose pipe can rule `null` out. */
@@ -110,9 +112,10 @@ export function branchOf(shape: Shape | undefined, value: unknown): Shape | unde
   const fits = (shape?.anyOf ?? shape?.oneOf)?.filter(
     (branch) =>
       branch.properties &&
-      Object.entries(branch.properties).every(
-        ([key, prop]) => !('const' in prop) || (value as Loose | undefined)?.[key] === prop.const,
-      ),
+      // Read once: a wide branch would cost every field each keystroke.
+      (branch.consts ??= Object.entries(branch.properties).filter(
+        ([, prop]) => 'const' in prop,
+      )).every(([key, prop]) => (value as Loose | undefined)?.[key] === prop.const),
   )
   return fits?.length === 1 ? fits[0] : shape
 }
@@ -137,8 +140,12 @@ export function withGroups(given: Shape | undefined, value: unknown): unknown {
       continue
     }
     const missing = current === undefined && !!shape.required?.includes(key)
-    // A missing group that may be `null` (Valibot's `nullable`) isn't made, as Zod's isn't.
-    if (child.type !== 'object' || (missing ? child.nullable : !isPlainObject(current))) continue
+    // A missing group that may be `null` isn't made: it has one error, for the group.
+    if (
+      child.type !== 'object' ||
+      (missing ? child.nullable || has(prop, 'null') : !isPlainObject(current))
+    )
+      continue
     const next = withGroups(child, missing ? {} : current)
     if (next !== current) out = { ...out, [key]: next }
   }

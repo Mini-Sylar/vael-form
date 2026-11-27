@@ -1,4 +1,4 @@
-import { effectScope, nextTick, shallowRef } from 'vue'
+import { effectScope, nextTick, shallowRef, watchEffect } from 'vue'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { type } from 'arktype'
 import * as v from 'valibot'
@@ -252,11 +252,18 @@ it('reads Valibot’s other wrappers and its exact length', async () => {
   expect(attrs.pair['aria-required']).toBe(true)
 })
 
-it('doesn’t make a missing Valibot group that may be null', async () => {
-  const schema = v.object({
-    address: v.nullable(v.object({ street: v.pipe(v.string(), v.minLength(1)) })),
-  })
-  const form = effectScope().run(() => useForm({ schema, defaultValues: {} }))!
+it.each(
+  Object.entries({
+    zod: z.object({ address: z.object({ street: z.string().min(1) }).nullable() }),
+    valibot: v.object({
+      address: v.nullable(v.object({ street: v.pipe(v.string(), v.minLength(1)) })),
+    }),
+    arktype: type({ address: type({ street: 'string >= 1' }).or('null') }),
+  }),
+)('%s: doesn’t make a missing group that may be null', async (_, schema) => {
+  const form = effectScope().run(() =>
+    useForm({ schema: schema as StandardSchemaV1, defaultValues: {} }),
+  )!
   void form.valid.value
   await flush()
   expect(form.allErrors.value.map((error) => error.path)).toEqual(['address'])
@@ -314,4 +321,29 @@ describe.each(
     await flush()
     expect(attrs.pay.amount['aria-required']).toBeUndefined() // one branch takes null
   })
+})
+
+it('keeps a wide union’s attrs about as quick as a plain form’s on each keystroke', async () => {
+  const wide = Object.fromEntries(
+    Array.from({ length: 300 }, (_, i) => [`f${i}`, z.string().min(1)]),
+  )
+  const plain = z.object({ type: z.literal('a'), ...wide })
+  const union = z.discriminatedUnion('type', [plain, z.object({ type: z.literal('b') })])
+  const time = async (schema: StandardSchemaV1) => {
+    const scope = effectScope()
+    const form = scope.run(() => useForm({ schema, defaultValues: { type: 'a' } as never }))!
+    const attrs = form.attrs as Record<string, any>
+    scope.run(() => Object.keys(wide).forEach((key) => watchEffect(() => void attrs[key])))
+    await flush()
+    const start = performance.now()
+    for (let i = 0; i < 20; i++) {
+      form.setValue('f0' as never, 'x'.repeat(i) as never)
+      await nextTick()
+    }
+    scope.stop()
+    return performance.now() - start
+  }
+  await time(plain) // warm up
+  const [one, many] = [await time(plain), await time(union)]
+  expect(many).toBeLessThan(one * 5) // each field once read every branch's properties
 })

@@ -19,6 +19,9 @@
       <input v-model="row.name" :data-test="`member-${index}`" />
     </div>
     <button type="button" data-test="add" @click="membersField.push({ name: '' })">add</button>
+    <button type="button" data-test="model-add" @click="members.push({ name: '' })">+</button>
+    <button type="button" data-test="model-cut" @click="members.splice(0, 1)">-</button>
+    <button type="button" data-test="model-flip" @click="members.reverse()">flip</button>
     <Child v-model="name" data-test-child />
     <output data-test="values">{{ JSON.stringify(values) }}</output>
   </form>

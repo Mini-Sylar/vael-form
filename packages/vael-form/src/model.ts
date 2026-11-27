@@ -39,16 +39,25 @@ export function createModel(core: FormCore): Record<string, Ref<unknown>> {
     const current = getIn(core.latest, toSegments(path))
     const rows = Array.isArray(current) ? current : []
     const next = rows.slice()
-    const result = (next as any)[method](...args.map(plain))
-    // Each row of the new list is the old row it is (a row there twice is new the second time).
-    const used = new Set<number>()
-    const fill: unknown[] = []
-    const order = next.map((value) => {
-      const from = rows.findIndex((row, i) => row === value && !used.has(i))
-      if (from < 0) fill.push(value)
-      else used.add(from)
-      return from
-    })
+    const items = args.map(plain)
+    const result = (next as any)[method](...items)
+    const splice = method === 'splice'
+    let fill = splice ? items.slice(2) : items
+    let order = [...rows.keys()]
+    // These say which rows go, which equal values (`['a', 'a']`) can't: they run on the indexes.
+    if (/^(p|u|sh|sp)/.test(method))
+      (order as any)[method](...(splice ? items.slice(0, 2) : []), ...fill.map(() => -1))
+    else {
+      // Each row of the new list is the old row it is (a row there twice is new the second time).
+      const used = new Set<number>()
+      fill = []
+      order = next.map((value) => {
+        const from = rows.findIndex((row, i) => row === value && !used.has(i))
+        if (from < 0) fill.push(value)
+        else used.add(from)
+        return from
+      })
+    }
     core.arrayOp(path, () => order, fill)
     return result === next ? list : result
   }

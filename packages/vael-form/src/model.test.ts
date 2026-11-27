@@ -117,6 +117,25 @@ describe('form.model', () => {
     expect(ada).not.toBe(list.items[0]!.key) // a row put back is a new row
   })
 
+  it('splice and shift on a list of equal values move the rows they say, not the first match', () => {
+    const form = effectScope().run(() =>
+      useForm({ schema, defaultValues: { ...defaults, tags: ['a', 'b', 'a', 'a'] } }),
+    )!
+    const list = form.field('tags')
+    const [, b, a2, a3] = list.items.map((item) => item.key)
+    form.setErrors({ 'tags.2': 'Taken' })
+    form.field('tags.3').touch()
+    form.model.tags.value.splice(0, 1)
+    expect(form.values.value.tags).toEqual(['b', 'a', 'a'])
+    expect(list.items.map((item) => item.key)).toEqual([b, a2, a3])
+    expect(form.allErrors.value).toEqual([{ path: 'tags.1', message: 'Taken' }])
+    expect(form.field('tags.2').touched).toBe(true)
+    form.model.tags.value.shift()
+    expect(list.items.map((item) => item.key)).toEqual([a2, a3])
+    form.model.tags.value.pop()
+    expect(list.items.map((item) => item.key)).toEqual([a2])
+  })
+
   it('stores a row copied from the model as plain data', () => {
     const form = make()
     const { members } = form.model

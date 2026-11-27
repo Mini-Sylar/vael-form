@@ -184,6 +184,20 @@ function valibot(issue: Loose, prefix: string): Described | undefined {
   }
   if (type.endsWith('integer')) return int(prefix)
   if (type === 'non_empty') return size(prefix, true, originOf(issue.input), 1, params)
+  // An exact length is a size too: too short or too long.
+  if (type === 'length')
+    return size(
+      prefix,
+      (issue.input as unknown[]).length < Number(requirement),
+      originOf(issue.input),
+      requirement,
+      params,
+    )
+  if (type === 'gt_value' || type === 'lt_value')
+    return size(prefix, type === 'gt_value', originOf(issue.input), requirement, {
+      ...params,
+      inclusive: false,
+    })
   const unit = type.slice(4)
   if (/^(min|max)_/.test(type))
     return size(
@@ -246,6 +260,8 @@ function arktype(issue: Loose, prefix: string): Described | undefined {
     case 'max':
     case 'before':
       return size(prefix, false, originOf(data), rule)
+    case 'exactLength':
+      return size(prefix, (data as string).length < Number(rule), originOf(data), rule)
     case 'divisor':
       // `number.integer` is a divisor of 1.
       return rule === 1

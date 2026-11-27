@@ -205,6 +205,33 @@ it('does not call words or bytes characters', async () => {
   expect(text.note).toBe('Note is too large (maximum 2)')
 })
 
+it('reads an exact length and an exclusive bound as a size, in Valibot and ArkType', async () => {
+  const valibot = v.object({
+    pin: v.pipe(v.string(), v.length(4)),
+    code: v.pipe(v.string(), v.length(4)),
+    pair: v.pipe(v.array(v.string()), v.length(2)),
+    qty: v.pipe(v.number(), v.gtValue(3)),
+    cap: v.pipe(v.number(), v.ltValue(10)),
+  })
+  const { text } = await errorsFor(valibot, {
+    pin: 'abc',
+    code: 'abcde',
+    pair: [],
+    qty: 3,
+    cap: 10,
+  })
+  expect(text).toEqual({
+    pin: 'Pin must be at least 4 characters',
+    code: 'Code must be at most 4 characters',
+    pair: 'Pair needs at least 2 items',
+    qty: 'Qty must be at least 3',
+    cap: 'Cap must be at most 10',
+  })
+  const ark = type({ pin: 'string == 4', code: 'string == 4' }) as unknown as StandardSchemaV1
+  const arkText = (await errorsFor(ark, { pin: 'abc', code: 'abcde' })).text
+  expect(arkText).toEqual({ pin: text.pin, code: text.code })
+})
+
 describe('what the schema’s author wrote', () => {
   it('is shown as written', async () => {
     const zodOne = z.object({ name: z.string().min(3, 'Pick a longer name') })
