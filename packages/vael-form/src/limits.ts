@@ -69,7 +69,8 @@ function nullRuledOut(given: Shape, outs: () => (Shape | undefined)[]): boolean 
           item.kind === 'schema' && !['nullable', 'nullish', 'any', 'unknown'].includes(item.type),
       )
   // Zod and ArkType: the output's JSON Schema, in each branch the value may be in; a transform reads as "anything".
-  const list = outs()
+  // A branch without the key doesn't count, as it doesn't for `aria-required`.
+  const list = outs().filter(Boolean)
   return (
     !!list[0] &&
     list.every((out) => !!out && !!(out.type ?? out.anyOf ?? out.oneOf) && !has(out, 'null'))

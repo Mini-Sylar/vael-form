@@ -41,23 +41,24 @@ export function createModel(core: FormCore): Record<string, Ref<unknown>> {
     const next = rows.slice()
     const items = args.map(plain)
     const result = (next as any)[method](...items)
-    const splice = method === 'splice'
-    let fill = splice ? items.slice(2) : items
     let order = [...rows.keys()]
-    // These say which rows go, which equal values (`['a', 'a']`) can't: they run on the indexes.
-    if (/^(p|u|sh|sp)/.test(method))
-      (order as any)[method](...(splice ? items.slice(0, 2) : []), ...fill.map(() => -1))
-    else {
-      // Each row of the new list is the old row it is (a row there twice is new the second time).
-      const used = new Set<number>()
-      fill = []
+    if (method === 'sort') {
+      // A sort is stable: each row is the first old row with its value not yet taken.
+      const pool: unknown[] = rows.slice()
       order = next.map((value) => {
-        const from = rows.findIndex((row, i) => row === value && !used.has(i))
-        if (from < 0) fill.push(value)
-        else used.add(from)
+        const from = pool.indexOf(value)
+        pool[from] = pool
         return from
       })
+    } else {
+      // The rest run on the positions, as equal values (`['a', 'a']`) can't say which row went; a value given is a new row.
+      const value = (i: number) =>
+        method === 'splice' ? i > 1 : method === 'fill' ? !i : method !== 'copyWithin'
+      ;(order as any)[method](...items.map((item, i) => (value(i) ? -1 : item)))
+      // A position `copyWithin` wrote holds a copy: a new row.
+      if (method === 'copyWithin') order = order.map((from, to) => (from === to ? to : -1))
     }
+    const fill = order.flatMap((from, to) => (from < 0 ? [next[to]] : []))
     core.arrayOp(path, () => order, fill)
     return result === next ? list : result
   }

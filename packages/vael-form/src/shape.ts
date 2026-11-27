@@ -10,6 +10,7 @@ export interface Shape {
   properties?: Record<string, Shape>
   required?: string[]
   items?: Shape
+  prefixItems?: Shape[]
   anyOf?: Shape[]
   oneOf?: Shape[]
   minLength?: number
@@ -133,9 +134,12 @@ export function withGroups(given: Shape | undefined, value: unknown): unknown {
   for (const [key, prop] of Object.entries(shape.properties)) {
     const current = out?.[key]
     const child = branchOf(prop, current)!
-    // A list's rows have their groups too.
-    if (child.type === 'array' && child.items && Array.isArray(current)) {
-      const rows = current.map((row) => (isPlainObject(row) ? withGroups(child.items, row) : row))
+    // A list's rows have their groups too, a nullable list's as well; a tuple's positions differ.
+    const [list, other] = [child, ...(child.anyOf ?? [])].filter(
+      (one) => one.items && !one.prefixItems,
+    )
+    if (list && !other && Array.isArray(current)) {
+      const rows = current.map((row) => (isPlainObject(row) ? withGroups(list.items, row) : row))
       if (rows.some((row, i) => row !== current[i])) out = { ...out, [key]: rows }
       continue
     }

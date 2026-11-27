@@ -323,6 +323,20 @@ describe.each(
   })
 })
 
+it('requires a key that only one branch has and that turns null away, with no branch picked', async () => {
+  const schema = z.object({
+    pay: z.discriminatedUnion('type', [
+      z.object({ type: z.literal('card'), number: z.number().nullable().pipe(z.number()) }),
+      z.object({ type: z.literal('cash') }),
+    ]),
+  })
+  const form = effectScope().run(() => useForm({ schema, defaultValues: { pay: {} } as never }))!
+  const attrs = form.attrs as Record<string, any>
+  void attrs.pay.number
+  await flush()
+  expect(attrs.pay.number['aria-required']).toBe(true) // as it is once `card` is picked
+})
+
 it('keeps a wide union’s attrs about as quick as a plain form’s on each keystroke', async () => {
   const wide = Object.fromEntries(
     Array.from({ length: 300 }, (_, i) => [`f${i}`, z.string().min(1)]),

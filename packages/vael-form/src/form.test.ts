@@ -254,6 +254,31 @@ describe('unions with groups', () => {
     expect(form.allErrors.value.map((i) => i.path)).toEqual(['members.0.address.street'])
   })
 
+  it.each(
+    Object.entries({
+      zod: z.object({
+        members: z.array(z.object({ address: z.object({ street: z.string().min(1) }) })).nullable(),
+      }),
+      valibot: v.object({
+        members: v.nullable(
+          v.array(v.object({ address: v.object({ street: v.pipe(v.string(), v.minLength(1)) }) })),
+        ),
+      }),
+      arktype: type({
+        members: type({ address: { street: 'string >= 1' } })
+          .array()
+          .or('null'),
+      }),
+    }),
+  )(
+    '%s: shows a missing group’s errors on its fields in a nullable list’s rows',
+    async (_, schema) => {
+      const form = make({ schema: schema as StandardSchemaV1, defaultValues: { members: [{}] } })
+      await warm(form)
+      expect(form.allErrors.value.map((i) => i.path)).toEqual(['members.0.address.street'])
+    },
+  )
+
   it.each(Object.entries(pays))(
     '%s: shows a missing group’s errors on its fields, in a list too',
     async (_, [one, many]) => {

@@ -136,6 +136,30 @@ describe('form.model', () => {
     expect(list.items.map((item) => item.key)).toEqual([a2])
   })
 
+  it('reverse, fill and copyWithin move rows by position, in a list of equal values too', () => {
+    const form = effectScope().run(() =>
+      useForm({ schema, defaultValues: { ...defaults, tags: ['a', 'a', 'c', 'd'] } }),
+    )!
+    const list = form.field('tags')
+    const keys = () => list.items.map((item) => item.key)
+    const [a0, a1, c, d] = keys()
+    form.field('tags.0').touch()
+    form.setErrors({ 'tags.0': 'Taken' })
+    form.model.tags.value.reverse()
+    expect(keys()).toEqual([d, c, a1, a0])
+    expect(form.field('tags.3').touched).toBe(true)
+    expect(form.allErrors.value).toEqual([{ path: 'tags.3', message: 'Taken' }])
+    form.model.tags.value.fill('a', 0, 1) // the other 'a' rows stay where they are
+    expect(form.values.value.tags).toEqual(['a', 'c', 'a', 'a'])
+    expect(keys().slice(1)).toEqual([c, a1, a0])
+    expect(keys()[0]).not.toBe(d)
+    form.model.tags.value.copyWithin(1, 2, 3) // a copy is a new row; the rest stay
+    expect(form.values.value.tags).toEqual(['a', 'a', 'a', 'a'])
+    expect(keys().slice(2)).toEqual([a1, a0])
+    expect(keys()[1]).not.toBe(c)
+    expect(form.field('tags.3').touched).toBe(true)
+  })
+
   it('stores a row copied from the model as plain data', () => {
     const form = make()
     const { members } = form.model
