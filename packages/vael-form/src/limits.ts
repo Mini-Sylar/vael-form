@@ -65,14 +65,16 @@ function nullRuledOut(given: Shape, schema: StandardSchemaV1, segments: Segments
 const bound = (value: number | undefined) =>
   value !== undefined && Math.abs(value) < Number.MAX_SAFE_INTEGER ? value : undefined
 
-/** A string the schema's format or pattern says can't be ''. */
+/** The tighter of two bounds, either of which may be missing (`undefined` or `NaN`). */
+const tighter = (pick: (a: number, b: number) => number, a?: number, b = NaN) =>
+  a === undefined ? b : b === b ? pick(a, b) : a
+
+/** A string the schema's pattern (else its format) says can't be ''; Zod's `hex` has a format and takes ''. */
 function notBlank(shape: Shape): boolean {
-  if (shape.format) return true
   try {
-    return shape.pattern !== undefined && !new RegExp(shape.pattern).test('')
-  } catch {
-    return false
-  }
+    if (shape.pattern !== undefined) return !new RegExp(shape.pattern).test('')
+  } catch {}
+  return !!shape.format
 }
 
 /** The attributes a schema implies for an input: limits, and `aria-required` for a value that can't be left empty. */
@@ -104,8 +106,9 @@ function attrsFor(
   if (has(shape, 'number') || has(shape, 'integer')) {
     // An integer's exclusive bound is the next whole number; a decimal's has no HTML form.
     const step = has(shape, 'integer') ? 1 : NaN
-    const min = bound(shape.minimum ?? (shape.exclusiveMinimum ?? NaN) + step)
-    const max = bound(shape.maximum ?? (shape.exclusiveMaximum ?? NaN) - step)
+    // Valibot can have both: the tighter wins.
+    const min = bound(tighter(Math.max, shape.minimum, (shape.exclusiveMinimum ?? NaN) + step))
+    const max = bound(tighter(Math.min, shape.maximum, (shape.exclusiveMaximum ?? NaN) - step))
     if (min !== undefined) attrs.min = min
     if (max !== undefined) attrs.max = max
     if (shape.multipleOf !== undefined) attrs.step = shape.multipleOf

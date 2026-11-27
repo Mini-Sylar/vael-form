@@ -1,10 +1,16 @@
 import { toRef } from 'vue'
 import type { Ref } from 'vue'
 import type { FormCore } from './core'
-import { getIn, isIndex, isPlainObject, joinPath, toSegments } from './path'
+import { getIn, isIndex, isPlainObject, joinPath, snapshot, toSegments } from './path'
 import { isListShape, isObjectShape } from './shape'
 
 const hidden = (key: string) => key.startsWith('__v_')
+
+// Each view's data, read now: any form's view stored in values is stored as a copy of its data.
+const reads = new WeakMap<object, () => unknown>()
+
+// The array methods that change a list in place: each is one list change, as `field.push` is.
+const MUTATOR = /^(push|pop|shift|unshift|splice|reverse|sort|fill|copyWithin)$/
 
 /**
  * `form.model`: one ref per field of the form, to destructure for `v-model="email"`. A group or a
@@ -13,6 +19,39 @@ const hidden = (key: string) => key.startsWith('__v_')
  */
 export function createModel(core: FormCore): Record<string, Ref<unknown>> {
   const views = new Map<string, object>()
+
+  /** What to store: a view (a row read from the model) becomes a copy of its data now. */
+  const plain = (value: unknown): unknown => {
+    const read = reads.get(value as object)
+    if (read) return snapshot(read())
+    if (!Array.isArray(value) && !isPlainObject(value)) return value
+    let out: Record<string, unknown> | unknown[] | undefined
+    for (const [key, item] of Object.entries(value)) {
+      const next = plain(item)
+      if (next !== item)
+        ((out ??= Array.isArray(value) ? [...value] : { ...value }) as any)[key] = next
+    }
+    return out ?? value
+  }
+
+  /** `members.splice(1, 1)` and the like: run on a copy, then one list change; each row keeps its key. */
+  const mutate = (path: string, list: object, method: string, args: unknown[]): unknown => {
+    const current = getIn(core.latest, toSegments(path))
+    const rows = Array.isArray(current) ? current : []
+    const next = rows.slice()
+    const result = (next as any)[method](...args.map(plain))
+    // Each row of the new list is the old row it is (a row there twice is new the second time).
+    const used = new Set<number>()
+    const fill: unknown[] = []
+    const order = next.map((value) => {
+      const from = rows.findIndex((row, i) => row === value && !used.has(i))
+      if (from < 0) fill.push(value)
+      else used.add(from)
+      return from
+    })
+    core.arrayOp(path, () => order, fill)
+    return result === next ? list : result
+  }
 
   // A group or a list the schema promises is a view before the data has it, so `address.street` works.
   const wrap = (path: string, value: unknown): unknown => {
@@ -40,6 +79,7 @@ export function createModel(core: FormCore): Record<string, Ref<unknown>> {
       get(target, key) {
         if (typeof key === 'symbol') return Reflect.get(target, key)
         if (hidden(key)) return key === '__v_skip' ? true : undefined
+        if (list && MUTATOR.test(key)) return (...args: unknown[]) => mutate(path, made!, key, args)
         const value = current()
         if (list && key === 'length') return Array.isArray(value) ? value.length : 0
         const own = list
@@ -50,9 +90,9 @@ export function createModel(core: FormCore): Record<string, Ref<unknown>> {
         return wrap(joinPath(path, key), (value as Record<string, unknown>)?.[key])
       },
       set(_, key, value) {
-        // A list's `length` is a path too: setting it truncates (and `push` sets it after the index).
+        // A list's `length` is a path too: setting it truncates.
         if (typeof key === 'symbol') return false
-        core.setValue(joinPath(path, key), value)
+        core.setValue(joinPath(path, key), plain(value))
         return true
       },
       // `map`, `forEach` and `in` ask whether an index exists.
@@ -73,6 +113,7 @@ export function createModel(core: FormCore): Record<string, Ref<unknown>> {
       },
     })
     views.set(id, made)
+    reads.set(made, () => getIn(core.latest, segments))
     return made
   }
 

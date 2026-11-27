@@ -454,7 +454,9 @@ export class FormCore {
         const shifted = new Map<string, readonly RawIssue[]>()
         for (const [key, list] of this.serverMap.value) {
           const to = remapKey(key, prefix, remap)
-          if (to !== null) shifted.set(to, list)
+          // The issue's own path moves too: `allErrors` and a later `setErrors` read it.
+          if (to !== null)
+            shifted.set(to, to === key ? list : list.map((i) => ({ ...i, path: to })))
         }
         this.serverMap.value = shifted
       }

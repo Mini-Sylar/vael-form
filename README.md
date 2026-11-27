@@ -177,7 +177,7 @@ A group of checkboxes or radios has one `id` and one error, so `attrs.x` goes on
 
 ### Limits from the schema
 
-`attrs` also carries what the schema says about the input: `minlength` and `maxlength` for text, `min`, `max` and `step` for numbers, and `aria-required` for a value that can't be left empty (a required string with a minimum or a format such as an email or a URL, a required number; not a boolean, nor a plain string, which may be `''`, nor a value that takes `null`). A bound that is only the safe-integer range, as Zod's `.int()` adds, isn't put on the input, and an integer's `.positive()` or `.lt(10)` becomes `min="1"` or `max="9"`. A `maxlength` stops the typing at the limit, so that error rarely needs showing. It works with Zod 4, Valibot and ArkType (not Zod Mini or Zod 3, which can't describe their schemas), and its code is a small chunk loaded when attrs are first read.
+`attrs` also carries what the schema says about the input: `minlength` and `maxlength` for text, `min`, `max` and `step` for numbers, and `aria-required` for a value that can't be left empty (a required string with a minimum, or a format or pattern that turns `''` away (an email or a URL; not Zod's `hex` or `base64`, which take `''`), a required number; not a boolean, nor a plain string, which may be `''`, nor a value that takes `null`). A bound that is only the safe-integer range, as Zod's `.int()` adds, isn't put on the input, and an integer's `.positive()` or `.lt(10)` becomes `min="1"` or `max="9"`. A `maxlength` stops the typing at the limit, so that error rarely needs showing. It works with Zod 4, Valibot and ArkType (not Zod Mini or Zod 3, which can't describe their schemas), and its code is a small chunk loaded when attrs are first read.
 
 ## Component libraries
 
@@ -510,11 +510,11 @@ const list = form.field('members') // a list's rows and operations live on its f
 <button type="button" @click="list.push({ name: '' })">Add</button>
 ```
 
-`push`, `insert`, `remove`, `move`, `swap`, `replace`. `item.key` is stable through edits and moves, and touched state follows the item.
+`push`, `insert`, `remove`, `move`, `swap`, `replace`. `item.key` is stable through edits and moves, and touched state follows the item. The model's list is an array: `members.value.splice(1, 1)`, `push` or `sort` on it is a list change like these, with the keys, touched state and server errors following their rows.
 
 ## Unions, tuples and dynamic schemas
 
-- A discriminated union has the fields of every branch (`attrs.number`, `attrs.iban`), and the schema validates the active one. Values of the other branch are kept, so switching back restores them; the submitted values only contain the active branch.
+- A discriminated union has the fields of every branch (`attrs.number`, `attrs.iban`), and the schema validates the active one. Values of the other branch are kept, so switching back restores them; the submitted values only contain the active branch. A group in the active branch (`card.number`) shows its fields' errors before the data has it, in a list's rows too.
 - A tuple is one field (`Field<[Date, Date]>`), with its positions as paths (`range.0`).
 - A nullable value is `Field<string | null>`; a recursive schema works, and its paths are checked to twelve levels.
 - `schema` can be a ref, for forms built from data: a new schema validates the same values again.

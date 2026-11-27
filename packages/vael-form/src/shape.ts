@@ -23,6 +23,8 @@ export interface Shape {
   pattern?: string | RegExp
   multipleOf?: number
   minItems?: number
+  /** A literal, such as a union's discriminator. */
+  const?: unknown
   /** Valibot's own schema, whose pipe holds its limits. */
   node?: Loose
   /** Valibot's `nullable` or `nullish` wrapper around this value, whose pipe can rule `null` out. */
@@ -40,7 +42,9 @@ function fromValibot(schema: Loose): Shape | undefined {
   const non = type.startsWith('non_')
   if (non || type === 'nullable' || type === 'nullish') {
     const inner = fromValibot(schema.wrapped)
-    return inner && { ...inner, nullable: non ? undefined : schema }
+    // `non_optional` takes back only the `undefined`.
+    const nullable = type === 'non_optional' ? inner?.nullable : non ? undefined : schema
+    return inner && { ...inner, nullable }
   }
   if (OPTIONAL.includes(type)) return fromValibot(schema.wrapped)
   if (type.endsWith('object')) {
@@ -57,6 +61,7 @@ function fromValibot(schema: Loose): Shape | undefined {
     return { anyOf: (schema.options as Loose[]).map((option) => fromValibot(option) ?? {}) }
   if (['string', 'number', 'boolean'].includes(type)) return { type, node: schema }
   if (type === 'picklist' || type === 'enum') return { type: 'string' }
+  if (type === 'literal') return { const: schema.literal }
   return undefined
 }
 
@@ -100,17 +105,37 @@ export function shapeAt(root: Shape | undefined, segments: Segments): Shape | un
 export const isObjectShape = (shape: Shape | undefined): boolean => has(shape, 'object')
 export const isListShape = (shape: Shape | undefined): boolean => has(shape, 'array')
 
+/** The one branch of a union whose discriminators (its `const` properties) the value matches. */
+function branchOf(shape: Shape | undefined, value: unknown): Shape | undefined {
+  const fits = (shape?.anyOf ?? shape?.oneOf)?.filter(
+    (branch) =>
+      branch.properties &&
+      Object.entries(branch.properties).every(
+        ([key, prop]) => !('const' in prop) || (value as Loose | undefined)?.[key] === prop.const,
+      ),
+  )
+  return fits?.length === 1 ? fits[0] : shape
+}
+
 /**
  * The values as the schema should see them: a required group the data doesn't have yet is an
  * empty object, so its fields report their own errors instead of the group reporting one. Returns
  * `value` itself when nothing is missing.
  */
-export function withGroups(shape: Shape | undefined, value: unknown): unknown {
+export function withGroups(given: Shape | undefined, value: unknown): unknown {
+  const shape = branchOf(given, value)
   if (shape?.type !== 'object' || !shape.properties) return value
   if (value !== undefined && !isPlainObject(value)) return value
   let out = value as Record<string, unknown> | undefined
-  for (const [key, child] of Object.entries(shape.properties)) {
+  for (const [key, prop] of Object.entries(shape.properties)) {
     const current = out?.[key]
+    const child = branchOf(prop, current)!
+    // A list's rows have their groups too.
+    if (child.type === 'array' && child.items && Array.isArray(current)) {
+      const rows = current.map((row) => (isPlainObject(row) ? withGroups(child.items, row) : row))
+      if (rows.some((row, i) => row !== current[i])) out = { ...out, [key]: rows }
+      continue
+    }
     const missing = current === undefined && !!shape.required?.includes(key)
     // A missing group that may be `null` (Valibot's `nullable`) isn't made, as Zod's isn't.
     if (child.type !== 'object' || (missing ? child.nullable : !isPlainObject(current))) continue

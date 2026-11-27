@@ -1,5 +1,6 @@
 import { effectScope, nextTick, shallowRef } from 'vue'
 import { describe, expect, it } from 'vitest'
+import { type } from 'arktype'
 import * as v from 'valibot'
 import { z } from 'zod'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
@@ -211,6 +212,64 @@ describe('unions', () => {
   })
 })
 
+describe('unions with groups', () => {
+  const card = z.object({
+    type: z.literal('card'),
+    card: z.object({ number: z.string().min(3, 'Too short') }),
+  })
+  const bank = z.object({ type: z.literal('bank'), iban: z.string() })
+  const vCard = v.object({
+    type: v.literal('card'),
+    card: v.object({ number: v.pipe(v.string(), v.minLength(3, 'Too short')) }),
+  })
+  const vBank = v.object({ type: v.literal('bank'), iban: v.string() })
+  const pays = {
+    zod: [
+      z.discriminatedUnion('type', [card, bank]),
+      z.object({ payments: z.array(z.discriminatedUnion('type', [card, bank])) }),
+    ],
+    arktype: [
+      type({ type: "'card'", card: { number: 'string >= 3' } }).or({
+        type: "'bank'",
+        iban: 'string',
+      }),
+      type({
+        payments: type({ type: "'card'", card: { number: 'string >= 3' } })
+          .or({ type: "'bank'", iban: 'string' })
+          .array(),
+      }),
+    ],
+    valibot: [
+      v.variant('type', [vCard, vBank]),
+      v.object({ payments: v.array(v.variant('type', [vCard, vBank])) }),
+    ],
+  }
+
+  it('shows the errors of a group missing from a list’s row on its fields', async () => {
+    const rows = z.object({
+      members: z.array(z.object({ address: z.object({ street: z.string().min(1) }) })),
+    })
+    const form = make({ schema: rows, defaultValues: { members: [{}] } })
+    await warm(form)
+    expect(form.allErrors.value.map((i) => i.path)).toEqual(['members.0.address.street'])
+  })
+
+  it.each(Object.entries(pays))(
+    '%s: shows a missing group’s errors on its fields, in a list too',
+    async (_, [one, many]) => {
+      const form = make({ schema: one as StandardSchemaV1, defaultValues: { type: 'card' } })
+      await warm(form)
+      expect(form.allErrors.value.map((i) => i.path)).toEqual(['card.number'])
+      const list = make({
+        schema: many as StandardSchemaV1,
+        defaultValues: { payments: [{ type: 'bank', iban: '' }, { type: 'card' }] },
+      })
+      await warm(list)
+      expect(list.allErrors.value.map((i) => i.path)).toEqual(['payments.1.card.number'])
+    },
+  )
+})
+
 describe('schema in a ref', () => {
   it('validates the same values against the new schema', async () => {
     const schema = shallowRef(
@@ -360,6 +419,19 @@ describe('server issues', () => {
     members.remove(0)
     expect(members.error).toBeUndefined()
     expect(members.items[0]!.field.name.error).toBe('Taken')
+  })
+
+  it('gives a moved row’s error its new path, so a later setErrors keeps it there', () => {
+    const form = make({
+      schema,
+      defaultValues: { ...base, members: [{ name: 'a' }, { name: 'b' }] },
+    })
+    form.setErrors({ 'members.1.name': 'Taken' })
+    form.field('members').remove(0)
+    expect(form.allErrors.value).toEqual([{ path: 'members.0.name', message: 'Taken' }])
+    form.setErrors({ name: 'Nope' })
+    expect(form.field('members.0.name').error).toBe('Taken')
+    expect(form.field('members.1.name').error).toBeUndefined()
   })
 
   it('takes standard issue lists, and clears on a submit', async () => {

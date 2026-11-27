@@ -96,6 +96,38 @@ describe('form.model', () => {
     expect(list.items).toHaveLength(2)
   })
 
+  it('splice, unshift, reverse and sort through the model move the rows and their keys', () => {
+    const form = make()
+    const { members } = form.model
+    const list = form.field('members')
+    members.value.push({ name: 'Grace' }, { name: 'Linus' })
+    const [ada, grace, linus] = list.items.map((item) => item.key)
+    const names = () => form.values.value.members?.map((row) => row?.name)
+    expect(members.value.splice(0, 1).map((row) => row.name)).toEqual(['Ada'])
+    expect(names()).toEqual(['Grace', 'Linus'])
+    expect(list.items.map((item) => item.key)).toEqual([grace, linus])
+    members.value.unshift({ name: 'Ada' })
+    expect(names()).toEqual(['Ada', 'Grace', 'Linus'])
+    expect(list.items.map((item) => item.key).slice(1)).toEqual([grace, linus])
+    members.value.reverse()
+    expect(names()).toEqual(['Linus', 'Grace', 'Ada'])
+    members.value.sort((a, b) => a.name!.localeCompare(b.name!))
+    expect(names()).toEqual(['Ada', 'Grace', 'Linus'])
+    expect(list.items.map((item) => item.key).slice(1)).toEqual([grace, linus])
+    expect(ada).not.toBe(list.items[0]!.key) // a row put back is a new row
+  })
+
+  it('stores a row copied from the model as plain data', () => {
+    const form = make()
+    const { members } = form.model
+    members.value.push({ name: 'Grace' })
+    members.value = members.value.filter((row) => row.name !== 'Ada')
+    expect(form.values.value.members).toEqual([{ name: 'Grace' }])
+    members.value[1] = members.value[0]!
+    members.value[0]!.name = 'Ada'
+    expect(form.values.value.members).toEqual([{ name: 'Ada' }, { name: 'Grace' }])
+  })
+
   it('does not look like a Vue ref or reactive object where it should not', () => {
     const form = make()
     const { address, members } = form.model

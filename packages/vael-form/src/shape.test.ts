@@ -200,6 +200,38 @@ describe.each(
   })
 })
 
+it('reads the pattern before the format: Zod’s hex and base64 take ""', async () => {
+  const form = effectScope().run(() =>
+    useForm({ schema: z.object({ hex: z.hex(), data: z.base64(), id: z.uuid() }) }),
+  )!
+  const attrs = form.attrs as Record<string, any>
+  void attrs.hex
+  await flush()
+  expect(attrs.hex['aria-required']).toBeUndefined()
+  expect(attrs.data['aria-required']).toBeUndefined()
+  expect(attrs.id['aria-required']).toBe(true)
+})
+
+it('keeps the tighter of an inclusive and an exclusive bound', async () => {
+  const schema = v.object({
+    seats: v.pipe(
+      v.number(),
+      v.integer(),
+      v.minValue(0),
+      v.gtValue(3),
+      v.ltValue(10),
+      v.maxValue(20),
+    ),
+    tip: v.nonOptional(v.nullish(v.pipe(v.string(), v.minLength(1)))),
+  })
+  const form = effectScope().run(() => useForm({ schema }))!
+  const attrs = form.attrs as Record<string, any>
+  void attrs.seats
+  await flush()
+  expect(attrs.seats).toMatchObject({ min: 4, max: 9 })
+  expect(attrs.tip['aria-required']).toBeUndefined() // `nonOptional` keeps the `null`
+})
+
 it('reads Valibot’s other wrappers and its exact length', async () => {
   const schema = v.object({
     nick: v.exactOptional(v.pipe(v.string(), v.minLength(2))),
