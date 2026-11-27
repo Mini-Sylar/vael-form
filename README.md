@@ -143,8 +143,9 @@ useForm({
 ```
 
 - Paths complete from the schema; `*` stands for a list index: `'members.*.email'`.
+- A list change (`remove`, `move`, `insert`, or `splice` on the model) moves each row's answer and pending call with it, so a passing row is checked again only when its value changes. A row whose rule failed is checked again after a list change (after `debounce`, so quick changes ask once), as its error may be about another row (`'Already in the list'` clears once the other copy is removed); it keeps the error until the new answer. A removed row's call, and a check a newer change replaced, are aborted.
 - A rule gets the value, and `{ values, path, signal }`. It returns a message, a list, or nothing. A message can be `msg('errors.taken')`, so it translates.
-- It runs when the schema has no error at that path (a badly formatted email never calls your API), and not for a value that is still the default one (an edit form doesn't check the address the user already has).
+- It runs when the schema has no error at that path (a badly formatted email never calls your API), and not for a value that is still the default one (an edit form doesn't check the address the user already has). A list's row is compared with its own default, wherever it has moved; a row added since has none, so it is checked. A whole list you write (`setValue('members', rows)`, `setValues`, `members.value = rows`) lines up with the defaults by position.
 - `debounce` waits for the last change. A change aborts the earlier call (`signal`) and only the newest answer is used.
 - Its errors count like the schema's: `showErrors` decides when they show, they set `valid`, and `handleSubmit` waits for them and stops on one. `pending` is true meanwhile, on the field (`username.pending`) and the form.
 - To check on blur instead of while typing: `username: { on: 'blur', run: check }`. A submit runs it anyway.
@@ -177,7 +178,7 @@ A group of checkboxes or radios has one `id` and one error, so `attrs.x` goes on
 
 ### Limits from the schema
 
-`attrs` also carries what the schema says about the input: `minlength` and `maxlength` for text, `min`, `max` and `step` for numbers, and `aria-required` for a value that can't be left empty (a required string with a minimum, a required number; not a boolean, nor a plain string, which may be `''`). A `maxlength` stops the typing at the limit, so that error rarely needs showing. It works with Zod 4, Valibot and ArkType (not Zod Mini or Zod 3, which can't describe their schemas), and its code is a small chunk loaded when attrs are first read.
+`attrs` also carries what the schema says about the input: `minlength` and `maxlength` for text, `min`, `max` and `step` for numbers, and `aria-required` for a value that can't be left empty (a required string with a minimum, or a format or pattern that turns `''` away (an email or a URL; not Zod's `hex` or `base64`, which take `''`), a required number; not a boolean, nor a plain string, which may be `''`, nor a value that takes `null`). A bound that is only the safe-integer range, as Zod's `.int()` adds, isn't put on the input, and an integer's `.positive()` or `.lt(10)` becomes `min="1"` or `max="9"`. A `maxlength` stops the typing at the limit, so that error rarely needs showing. It works with Zod 4, Valibot and ArkType (not Zod Mini or Zod 3, which can't describe their schemas), and its code is a small chunk loaded when attrs are first read.
 
 ## Component libraries
 
@@ -191,7 +192,7 @@ A group of checkboxes or radios has one `id` and one error, so `attrs.x` goes on
 
 A library that lets a passed `id` replace its own would lose its label. There, spread only what it needs: `:name="attrs.email.name" @focusout="attrs.email.onFocusout"`.
 
-A control that can be emptied writes `null`: a number input you clear, a `clearable` select, a date picker. A field's model is its schema's input, or `undefined` until set, so give that field a schema that takes `null`. Use `.nullable()` when empty is a valid answer. When the field is required, add `.pipe(z.number())`: `null` then fails with the field's "required" message, and the limits still reach `attrs`.
+A control that can be emptied writes `null`: a number input you clear, a `clearable` select, a date picker. A field's model is its schema's input, or `undefined` until set, so give that field a schema that takes `null`. Use `.nullable()` when empty is a valid answer. When the field is required, add `.pipe(z.number())`: `null` then fails with the field's "required" message, and `attrs` keeps its limits and `aria-required`. A `.refine()` or `.transform()` that turns `null` away can't be read from the schema, so that field gets no `aria-required`.
 
 ```ts
 seats: z.number().int().min(1).nullable().pipe(z.number()), // required
@@ -510,11 +511,11 @@ const list = form.field('members') // a list's rows and operations live on its f
 <button type="button" @click="list.push({ name: '' })">Add</button>
 ```
 
-`push`, `insert`, `remove`, `move`, `swap`, `replace`. `item.key` is stable through edits and moves, and touched state follows the item.
+`push`, `insert`, `remove`, `move`, `swap`, `replace`. `item.key` is stable through edits and moves, and touched state follows the item. A row's `reset()` and `dirty` use its own default, wherever it has moved. The model's list is an array: `members.value.splice(1, 1)`, `push` or `sort` on it is a list change like these, with the keys, touched state and server errors following their rows.
 
 ## Unions, tuples and dynamic schemas
 
-- A discriminated union has the fields of every branch (`attrs.number`, `attrs.iban`), and the schema validates the active one. Values of the other branch are kept, so switching back restores them; the submitted values only contain the active branch.
+- A discriminated union has the fields of every branch (`attrs.number`, `attrs.iban`), and the schema validates the active one. Values of the other branch are kept, so switching back restores them; the submitted values only contain the active branch. A group in the active branch (`card.number`) shows its fields' errors before the data has it, in a list's rows too. Its `attrs` come from the active branch too, so `aria-required` and the limits follow `type`; before a branch is picked, a field gets `aria-required` only if every branch requires it.
 - A tuple is one field (`Field<[Date, Date]>`), with its positions as paths (`range.0`).
 - A nullable value is `Field<string | null>`; a recursive schema works, and its paths are checked to twelve levels.
 - `schema` can be a ref, for forms built from data: a new schema validates the same values again.

@@ -87,6 +87,90 @@ describe('form.model', () => {
     expect(tags.value.includes('b')).toBe(true)
   })
 
+  it('a row pushed through the model keeps the other rows’ keys', () => {
+    const form = make()
+    const list = form.field('members')
+    const before = list.items.map((item) => item.key)
+    form.model.members.value.push({ name: 'Linus' })
+    expect(list.items.map((item) => item.key).slice(0, 1)).toEqual(before)
+    expect(list.items).toHaveLength(2)
+  })
+
+  it('splice, unshift, reverse and sort through the model move the rows and their keys', () => {
+    const form = make()
+    const { members } = form.model
+    const list = form.field('members')
+    members.value.push({ name: 'Grace' }, { name: 'Linus' })
+    const [ada, grace, linus] = list.items.map((item) => item.key)
+    const names = () => form.values.value.members?.map((row) => row?.name)
+    expect(members.value.splice(0, 1).map((row) => row.name)).toEqual(['Ada'])
+    expect(names()).toEqual(['Grace', 'Linus'])
+    expect(list.items.map((item) => item.key)).toEqual([grace, linus])
+    members.value.unshift({ name: 'Ada' })
+    expect(names()).toEqual(['Ada', 'Grace', 'Linus'])
+    expect(list.items.map((item) => item.key).slice(1)).toEqual([grace, linus])
+    members.value.reverse()
+    expect(names()).toEqual(['Linus', 'Grace', 'Ada'])
+    members.value.sort((a, b) => a.name!.localeCompare(b.name!))
+    expect(names()).toEqual(['Ada', 'Grace', 'Linus'])
+    expect(list.items.map((item) => item.key).slice(1)).toEqual([grace, linus])
+    expect(ada).not.toBe(list.items[0]!.key) // a row put back is a new row
+  })
+
+  it('splice and shift on a list of equal values move the rows they say, not the first match', () => {
+    const form = effectScope().run(() =>
+      useForm({ schema, defaultValues: { ...defaults, tags: ['a', 'b', 'a', 'a'] } }),
+    )!
+    const list = form.field('tags')
+    const [, b, a2, a3] = list.items.map((item) => item.key)
+    form.setErrors({ 'tags.2': 'Taken' })
+    form.field('tags.3').touch()
+    form.model.tags.value.splice(0, 1)
+    expect(form.values.value.tags).toEqual(['b', 'a', 'a'])
+    expect(list.items.map((item) => item.key)).toEqual([b, a2, a3])
+    expect(form.allErrors.value).toEqual([{ path: 'tags.1', message: 'Taken' }])
+    expect(form.field('tags.2').touched).toBe(true)
+    form.model.tags.value.shift()
+    expect(list.items.map((item) => item.key)).toEqual([a2, a3])
+    form.model.tags.value.pop()
+    expect(list.items.map((item) => item.key)).toEqual([a2])
+  })
+
+  it('reverse, fill and copyWithin move rows by position, in a list of equal values too', () => {
+    const form = effectScope().run(() =>
+      useForm({ schema, defaultValues: { ...defaults, tags: ['a', 'a', 'c', 'd'] } }),
+    )!
+    const list = form.field('tags')
+    const keys = () => list.items.map((item) => item.key)
+    const [a0, a1, c, d] = keys()
+    form.field('tags.0').touch()
+    form.setErrors({ 'tags.0': 'Taken' })
+    form.model.tags.value.reverse()
+    expect(keys()).toEqual([d, c, a1, a0])
+    expect(form.field('tags.3').touched).toBe(true)
+    expect(form.allErrors.value).toEqual([{ path: 'tags.3', message: 'Taken' }])
+    form.model.tags.value.fill('a', 0, 1) // the other 'a' rows stay where they are
+    expect(form.values.value.tags).toEqual(['a', 'c', 'a', 'a'])
+    expect(keys().slice(1)).toEqual([c, a1, a0])
+    expect(keys()[0]).not.toBe(d)
+    form.model.tags.value.copyWithin(1, 2, 3) // a copy is a new row; the rest stay
+    expect(form.values.value.tags).toEqual(['a', 'a', 'a', 'a'])
+    expect(keys().slice(2)).toEqual([a1, a0])
+    expect(keys()[1]).not.toBe(c)
+    expect(form.field('tags.3').touched).toBe(true)
+  })
+
+  it('stores a row copied from the model as plain data', () => {
+    const form = make()
+    const { members } = form.model
+    members.value.push({ name: 'Grace' })
+    members.value = members.value.filter((row) => row.name !== 'Ada')
+    expect(form.values.value.members).toEqual([{ name: 'Grace' }])
+    members.value[1] = members.value[0]!
+    members.value[0]!.name = 'Ada'
+    expect(form.values.value.members).toEqual([{ name: 'Ada' }, { name: 'Grace' }])
+  })
+
   it('does not look like a Vue ref or reactive object where it should not', () => {
     const form = make()
     const { address, members } = form.model

@@ -186,6 +186,266 @@ describe('rules', () => {
     await flush()
     expect(form.valid.value).toBe(true)
   })
+
+  it('keeps a row’s answer when a list change moves it, and checks only changed rows', async () => {
+    const seen: string[] = []
+    const form = make({
+      schema,
+      defaultValues: defaults,
+      showErrors: 'input',
+      rules: {
+        'members.*.email': async (value) => {
+          seen.push(value)
+          return value.startsWith('bad') ? 'Not allowed' : undefined
+        },
+      },
+    })
+    await warm(form)
+    const members = form.field('members')
+    members.push({ email: 'a@x.co' })
+    members.push({ email: 'bad@x.co' })
+    members.push({ email: 'c@x.co' })
+    await flush()
+    expect(seen.toSorted()).toEqual(['a@x.co', 'bad@x.co', 'c@x.co'])
+
+    seen.length = 0
+    members.remove(0)
+    await flush()
+    members.move(0, 1)
+    await flush()
+    expect(seen).toEqual(['bad@x.co', 'bad@x.co']) // only the failing row, once per change
+    expect(members.items[1]!.field.email.error).toBe('Not allowed') // the answer moved too
+
+    seen.length = 0
+    members.insert(0, { email: 'd@x.co' })
+    await flush()
+    expect(seen.toSorted()).toEqual(['bad@x.co', 'd@x.co'])
+
+    form.field('members.2.email').value = 'e@x.co'
+    await flush()
+    expect(seen.toSorted()).toEqual(['bad@x.co', 'd@x.co', 'e@x.co'])
+    expect(form.valid.value).toBe(true)
+  })
+
+  it('a moved row keeps its pending run; a removed row’s is aborted', async () => {
+    const runs: { value: string; signal: AbortSignal }[] = []
+    const form = make({
+      schema,
+      defaultValues: defaults,
+      showErrors: 'input',
+      rules: {
+        'members.*.email': async (value, { signal }) => {
+          runs.push({ value, signal })
+          await wait(30)
+          return value.startsWith('bad') ? 'Not allowed' : undefined
+        },
+      },
+    })
+    await warm(form)
+    const members = form.field('members')
+    members.push({ email: 'a@x.co' })
+    members.push({ email: 'bad@x.co' })
+    await flush()
+    expect(runs.length).toBe(2)
+    members.remove(0)
+    await flush()
+    expect(runs.map((run) => [run.value, run.signal.aborted])).toEqual([
+      ['a@x.co', true],
+      ['bad@x.co', false],
+    ]) // no new run for the row that moved up
+    expect(members.items[0]!.field.email.pending).toBe(true)
+    await flush(40)
+    expect(members.items[0]!.field.email.error).toBe('Not allowed')
+  })
+})
+
+describe('rules after a list change', () => {
+  it('checks a failing row again, so an error about another row clears; a passing row isn’t', async () => {
+    const seen: string[] = []
+    const form = make({
+      schema,
+      defaultValues: defaults,
+      showErrors: 'input',
+      rules: {
+        'members.*.email': (value, { values }) => {
+          seen.push(value)
+          const all = (values.members ?? []).map((member) => member.email)
+          return all.indexOf(value) !== all.lastIndexOf(value) ? 'Duplicate' : undefined
+        },
+      },
+    })
+    await warm(form)
+    const members = form.field('members')
+    for (const email of ['a@x.co', 'b@x.co', 'a@x.co']) members.push({ email })
+    await flush()
+    expect(members.items[0]!.field.email.error).toBe('Duplicate')
+    seen.length = 0
+    members.remove(2)
+    await flush()
+    expect(seen).toEqual(['a@x.co']) // only the row that failed
+    expect(form.valid.value).toBe(true)
+  })
+
+  it('compares a row with its own default, not the one at its index', async () => {
+    const seen: string[] = []
+    const form = make({
+      schema,
+      defaultValues: { username: 'ada', members: [{ email: 'a@x.co' }, { email: 'b@x.co' }] },
+      showErrors: 'input',
+      rules: { 'members.*.email': (value) => void seen.push(value) },
+    })
+    await warm(form)
+    const members = form.field('members')
+    members.move(0, 1)
+    await flush()
+    members.remove(0)
+    await flush()
+    expect(seen).toEqual([]) // each row is still its own default
+    members.insert(0, { email: 'b@x.co' })
+    await flush()
+    expect(seen).toEqual(['b@x.co']) // a new row has no default
+
+    seen.length = 0
+    form.reset()
+    members.move(0, 1)
+    await flush()
+    form.setValues({ username: 'ada', members: [{ email: 'a@x.co' }, { email: 'b@x.co' }] })
+    await flush()
+    members.reset()
+    members.swap(0, 1)
+    await flush()
+    expect(seen).toEqual([]) // reset, setValues and a field's reset line the rows up with the defaults
+  })
+})
+
+describe('rules after a list change, again', () => {
+  const duplicate = (seen: string[], signals: AbortSignal[] = [], ms = 0) =>
+    (async (value: string, { values, signal }: any) => {
+      seen.push(value)
+      signals.push(signal)
+      if (ms) await wait(ms)
+      const all = (values.members ?? []).map((member: any) => member.email)
+      return all.indexOf(value) !== all.lastIndexOf(value) ? 'Duplicate' : undefined
+    }) as never
+
+  it('aborts a failing row’s check that another list change superseded', async () => {
+    const seen: string[] = []
+    const signals: AbortSignal[] = []
+    const form = make({
+      schema,
+      defaultValues: defaults,
+      showErrors: 'input',
+      rules: { 'members.*.email': duplicate(seen, signals, 30) },
+    })
+    await warm(form)
+    const members = form.field('members')
+    for (const email of ['a@x.co', 'a@x.co']) members.push({ email })
+    await flush(50)
+    expect(members.items[0]!.field.email.error).toBe('Duplicate')
+    signals.length = 0
+    members.push({ email: 'c@x.co' })
+    await flush()
+    members.push({ email: 'd@x.co' })
+    await flush(50)
+    const [first] = signals
+    expect(signals.filter((one) => one === first)).toHaveLength(1)
+    expect(first!.aborted).toBe(true) // the first recheck was superseded
+  })
+
+  it('waits the debounce before a failing row is checked again', async () => {
+    const seen: string[] = []
+    const form = make({
+      schema,
+      defaultValues: defaults,
+      showErrors: 'input',
+      debounce: 20,
+      rules: { 'members.*.email': duplicate(seen) },
+    })
+    await warm(form)
+    const members = form.field('members')
+    for (const email of ['a@x.co', 'a@x.co']) members.push({ email })
+    await flush(40)
+    seen.length = 0
+    for (const email of ['c@x.co', 'd@x.co', 'e@x.co']) {
+      members.push({ email })
+      await flush(1)
+    }
+    await flush(40)
+    expect(seen.filter((one) => one === 'a@x.co')).toHaveLength(2) // once per failing row
+  })
+
+  it('skips the rows of a whole list written back at their defaults', async () => {
+    const seen: string[] = []
+    const rows = [{ email: 'a@x.co' }, { email: 'b@x.co' }]
+    const form = make({
+      schema,
+      defaultValues: { username: 'ada', members: rows },
+      showErrors: 'input',
+      rules: { 'members.*.email': (value) => void seen.push(value) },
+    })
+    await warm(form)
+    form.setValue('members', structuredClone(rows))
+    await flush()
+    form.model.members!.value = structuredClone(rows)
+    await flush()
+    expect(seen).toEqual([])
+  })
+
+  it('submits right after a list change cleared a duplicate, and a deduping rule ends', async () => {
+    const seen: string[] = []
+    let submitted = 0
+    const form = make({
+      schema,
+      defaultValues: defaults,
+      showErrors: 'input',
+      onSubmit: () => void submitted++,
+      rules: { 'members.*.email': duplicate(seen) },
+    })
+    await warm(form)
+    const members = form.field('members')
+    for (const email of ['a@x.co', 'b@x.co', 'a@x.co']) members.push({ email })
+    await flush()
+    members.remove(2)
+    expect(await form.handleSubmit()).toBe(true)
+    expect(submitted).toBe(1)
+    // A rule that removes its own duplicate settles.
+    const auto = make({
+      schema,
+      defaultValues: defaults,
+      rules: {
+        'members.*.email': (value, { values, path }) => {
+          seen.push(value)
+          const all = (values.members ?? []).map((member) => member.email)
+          if (all.indexOf(value) === all.lastIndexOf(value)) return
+          auto.field('members').remove(+path.split('.')[1]!)
+          return 'Duplicate'
+        },
+      },
+    })
+    await warm(auto)
+    for (const email of ['a@x.co', 'a@x.co', 'a@x.co']) auto.field('members').push({ email })
+    seen.length = 0
+    await flush(30)
+    expect(seen.length).toBeLessThan(10)
+    expect(auto.values.value.members!.length).toBeGreaterThan(0)
+  })
+
+  it('keeps the defaults when the rows a field reset put back are edited', async () => {
+    const form = make({
+      schema,
+      defaultValues: { username: 'ada', members: [{ email: 'a@x.co' }] },
+    })
+    const members = form.field('members')
+    members.push({ email: 'b@x.co' })
+    members.reset()
+    form.field('members.0.email').value = 'z@x.co'
+    form.model.members!.value.push({ email: 'c@x.co' })
+    ;(form.model.members!.value as any)[0].email = 'y@x.co'
+    members.move(0, 1)
+    form.reset()
+    expect(form.values.value.members).toEqual([{ email: 'a@x.co' }])
+    expect(form.dirty.value).toBe(false)
+  })
 })
 
 describe('rules and submit', () => {
@@ -226,6 +486,26 @@ describe('rules and submit', () => {
     form.field('username').value = 'grace'
     await expect(form.handleSubmit()).rejects.toThrow('network down')
     expect(form.submitting.value).toBe(false)
+  })
+
+  it('submits once a rule that threw passes on the next try', async () => {
+    let down = true
+    let submitted = 0
+    const form = make({
+      schema,
+      defaultValues: defaults,
+      onSubmit: () => void submitted++,
+      rules: {
+        username: () => {
+          if (down) throw new Error('network down')
+        },
+      },
+    })
+    form.field('username').value = 'grace'
+    await expect(form.handleSubmit()).rejects.toThrow('network down')
+    down = false
+    expect(await form.handleSubmit()).toBe(true) // the old failure is not thrown again
+    expect(submitted).toBe(1)
   })
 
   it('validate(path) settles only that path', async () => {

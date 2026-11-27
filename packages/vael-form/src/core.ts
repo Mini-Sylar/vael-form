@@ -117,6 +117,8 @@ interface Watcher {
 export class FormCore {
   readonly id: string
   readonly values: ShallowRef<unknown>
+  /** The scope the form was made in: its own watchers stop with it. */
+  private readonly scope = getCurrentScope()
   readonly initial: ShallowRef<unknown>
   readonly issueMap: ShallowRef<IssueMap> = shallowRef(EMPTY_ISSUES)
   readonly serverMap: ShallowRef<IssueMap> = shallowRef(EMPTY_ISSUES)
@@ -195,7 +197,8 @@ export class FormCore {
       watch(
         () => snapshot(toValue(source)),
         (next) => {
-          if (!this.dirty) this.reset(next ?? {})
+          // The same data again (a refetch) keeps what the user has seen, errors and all.
+          if (!this.dirty && !isEqual(next ?? {}, this.initial.value)) this.reset(next ?? {})
         },
       )
   }
@@ -232,7 +235,7 @@ export class FormCore {
       this.limits = module.limitsAt
       this.limitsReady.value = true
     })
-    return this.limitsReady.value ? this.limits!(root, segments) : {}
+    return this.limitsReady.value ? this.limits!(root, segments, this, this.scope) : {}
   }
 
   // ---- config
@@ -302,23 +305,54 @@ export class FormCore {
     this.values.value = next
   }
 
-  private inheritKeys = (from: unknown[], to: unknown[]): void => {
-    const keys = this.keys.get(from)
-    if (keys) this.keys.set(to, keys)
+  // Made now if not yet, so the copy and the defaults it came from share their rows' keys.
+  private inheritKeys = (from: unknown[], to: unknown[]): void =>
+    void this.keys.set(to, this.keysOf(from))
+
+  /** Gives each list in `next` that has no keys yet those of the defaults' list there, by position. */
+  private align(next: any, base: any): void {
+    if (Array.isArray(next) && Array.isArray(base)) {
+      if (!this.keys.has(next)) this.inheritKeys(base, next)
+    } else if (!isPlainObject(next) || !isPlainObject(base)) return
+    for (const key in next) this.align((next as any)[key], (base as any)[key])
   }
 
   keysOf(array: unknown[]): string[] {
     let keys = this.keys.get(array)
-    if (!keys || keys.length !== array.length) {
-      keys = array.map(() => `${this.id}-${++this.keyCount}`)
+    if (keys?.length !== array.length) {
+      // A row added or cut at the end (`push`, `length`) leaves the others' keys alone.
+      const old = keys
+      keys = array.map((_, i) => old?.[i] ?? this.newKey())
       this.keys.set(array, keys)
     }
     return keys
   }
 
+  private rowsAt = new WeakMap<string[], Map<string, number>>()
+
+  /** The default at `segments` in `values`, boxed; none for a row added since, as a row's is found by its key. */
+  defaultAt(segments: Segments, values: unknown = this.latest): [unknown] | undefined {
+    let base = this.initial.value
+    for (const key of segments) {
+      if (Array.isArray(values) && Array.isArray(base) && isIndex(key)) {
+        const keys = this.keysOf(base)
+        let rows = this.rowsAt.get(keys)
+        if (!rows) this.rowsAt.set(keys, (rows = new Map(keys.map((row, i) => [row, i]))))
+        const at = rows.get(this.keysOf(values)[+key]!)
+        if (at === undefined) return
+        base = base[at]
+      } else base = getIn(base, [key])
+      values = getIn(values, [key])
+    }
+    return [base]
+  }
+
   /** `user` is false for a change the form makes (a reset), which `field.watch` doesn't report. */
   setValue = (path: string, value: unknown, user = true): void => {
-    const next = setIn(this.latest, toSegments(path), value, this.inheritKeys)
+    const segments = toSegments(path)
+    // A list written whole lines up with the defaults' rows by position, as in setValues.
+    this.align(value, this.defaultAt(segments)?.[0])
+    const next = setIn(this.latest, segments, value, this.inheritKeys)
     if (user) {
       // A write that changes nothing is not an edit a watcher will be told about.
       if (next !== this.latest) this.userEdits++
@@ -330,7 +364,10 @@ export class FormCore {
 
   setValues = (values: unknown): void => {
     this.seenEdits = this.userEdits // an edit made earlier in this tick is overwritten, not reported
-    this.commit(snapshot(values))
+    const next = snapshot(values)
+    // The new rows line up with the defaults' by position: a rule skips a row still at its default.
+    this.align(next, this.initial.value)
+    this.commit(next)
     this.clearErrors()
   }
 
@@ -451,11 +488,15 @@ export class FormCore {
         const shifted = new Map<string, readonly RawIssue[]>()
         for (const [key, list] of this.serverMap.value) {
           const to = remapKey(key, prefix, remap)
-          if (to !== null) shifted.set(to, list)
+          // The issue's own path moves too: `allErrors` and a later `setErrors` read it.
+          if (to !== null)
+            shifted.set(to, to === key ? list : list.map((i) => ({ ...i, path: to })))
         }
         this.serverMap.value = shifted
       }
     }
+    // A rule's answer follows its row; a failing row is asked again, as its error may be about another.
+    this.engine?.move(path, (key) => remapKey(key, `${path}.`, (i) => moved[i] ?? null))
     if (fresh) {
       const added = order.flatMap((from, to) => (from < 0 ? `${path}.${to}` : []))
       this.freshSet.value = new Set([...this.freshSet.value, ...added])
@@ -542,13 +583,8 @@ export class FormCore {
     const touched = under(this.touchedSet.value)
     if (mode === 'blur') return touched
     if (mode === 'edited') return touched && under(this.editedSet.value)
-    return (
-      touched ||
-      !isEqual(
-        getIn(this.values.value, toSegments(path)),
-        getIn(this.initial.value, toSegments(path)),
-      )
-    )
+    const segments = toSegments(path)
+    return touched || !isEqual(getIn(this.values.value, segments), this.defaultAt(segments)?.[0])
   }
 
   // ---- issues
@@ -648,7 +684,7 @@ export class FormCore {
       return (this.engine = new RuleEngine(
         this.options.rules as never,
         this.options.debounce ?? 0,
-        { values: () => this.latest, defaults: () => this.initial.value },
+        this,
         this.ruleIssues,
         this.ruleBusy,
       ))

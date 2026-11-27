@@ -63,6 +63,26 @@ describe('v-model on form.model', () => {
     expect(values().members).toEqual([{ name: 'Linus' }, { name: 'Grace' }])
   })
 
+  it('splice, push and reverse on the model list keep each row’s input', async () => {
+    mounted = mount(Model, {})
+    await flush()
+    el('model-add').click()
+    await flush()
+    await type(el('member-1'), 'Grace')
+    el('model-add').click()
+    await flush()
+    await type(el('member-2'), 'Linus')
+    const grace = el('member-1')
+    el('model-cut').click()
+    await flush()
+    expect(values().members).toEqual([{ name: 'Grace' }, { name: 'Linus' }])
+    expect(el('member-0')).toBe(grace) // not remounted
+    el('model-flip').click()
+    await flush()
+    expect(el('member-1')).toBe(grace)
+    expect([el('member-0').value, el('member-1').value]).toEqual(['Linus', 'Grace'])
+  })
+
   it('is the same state as fields: the error, dirty and touched follow a v-model write', async () => {
     mounted = mount(Model, {})
     await flush()

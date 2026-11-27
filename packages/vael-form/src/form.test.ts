@@ -1,5 +1,6 @@
 import { effectScope, nextTick, shallowRef } from 'vue'
 import { describe, expect, it } from 'vitest'
+import { type } from 'arktype'
 import * as v from 'valibot'
 import { z } from 'zod'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
@@ -84,6 +85,17 @@ describe('reactive initial', () => {
     loaded.value = { name: 'Refetched' }
     await flush()
     expect(form.field('name').value).toBe('Grace')
+  })
+
+  it('keeps a failed submit’s errors when a refetch brings the same data', async () => {
+    const loaded = shallowRef({ ...base, name: '' })
+    const form = make({ schema, defaultValues: loaded })
+    expect(await form.handleSubmit()).toBe(false)
+    await flush()
+    loaded.value = { ...base, name: '' } // a new object, the same data
+    await flush()
+    expect(form.submitCount.value).toBe(1)
+    expect(form.field('name').error).toBe('Too short')
   })
 })
 
@@ -198,6 +210,89 @@ describe('unions', () => {
       'payments.1.number',
     ])
   })
+})
+
+describe('unions with groups', () => {
+  const card = z.object({
+    type: z.literal('card'),
+    card: z.object({ number: z.string().min(3, 'Too short') }),
+  })
+  const bank = z.object({ type: z.literal('bank'), iban: z.string() })
+  const vCard = v.object({
+    type: v.literal('card'),
+    card: v.object({ number: v.pipe(v.string(), v.minLength(3, 'Too short')) }),
+  })
+  const vBank = v.object({ type: v.literal('bank'), iban: v.string() })
+  const pays = {
+    zod: [
+      z.discriminatedUnion('type', [card, bank]),
+      z.object({ payments: z.array(z.discriminatedUnion('type', [card, bank])) }),
+    ],
+    arktype: [
+      type({ type: "'card'", card: { number: 'string >= 3' } }).or({
+        type: "'bank'",
+        iban: 'string',
+      }),
+      type({
+        payments: type({ type: "'card'", card: { number: 'string >= 3' } })
+          .or({ type: "'bank'", iban: 'string' })
+          .array(),
+      }),
+    ],
+    valibot: [
+      v.variant('type', [vCard, vBank]),
+      v.object({ payments: v.array(v.variant('type', [vCard, vBank])) }),
+    ],
+  }
+
+  it('shows the errors of a group missing from a list’s row on its fields', async () => {
+    const rows = z.object({
+      members: z.array(z.object({ address: z.object({ street: z.string().min(1) }) })),
+    })
+    const form = make({ schema: rows, defaultValues: { members: [{}] } })
+    await warm(form)
+    expect(form.allErrors.value.map((i) => i.path)).toEqual(['members.0.address.street'])
+  })
+
+  it.each(
+    Object.entries({
+      zod: z.object({
+        members: z.array(z.object({ address: z.object({ street: z.string().min(1) }) })).nullable(),
+      }),
+      valibot: v.object({
+        members: v.nullable(
+          v.array(v.object({ address: v.object({ street: v.pipe(v.string(), v.minLength(1)) }) })),
+        ),
+      }),
+      arktype: type({
+        members: type({ address: { street: 'string >= 1' } })
+          .array()
+          .or('null'),
+      }),
+    }),
+  )(
+    '%s: shows a missing group’s errors on its fields in a nullable list’s rows',
+    async (_, schema) => {
+      const form = make({ schema: schema as StandardSchemaV1, defaultValues: { members: [{}] } })
+      await warm(form)
+      expect(form.allErrors.value.map((i) => i.path)).toEqual(['members.0.address.street'])
+    },
+  )
+
+  it.each(Object.entries(pays))(
+    '%s: shows a missing group’s errors on its fields, in a list too',
+    async (_, [one, many]) => {
+      const form = make({ schema: one as StandardSchemaV1, defaultValues: { type: 'card' } })
+      await warm(form)
+      expect(form.allErrors.value.map((i) => i.path)).toEqual(['card.number'])
+      const list = make({
+        schema: many as StandardSchemaV1,
+        defaultValues: { payments: [{ type: 'bank', iban: '' }, { type: 'card' }] },
+      })
+      await warm(list)
+      expect(list.allErrors.value.map((i) => i.path)).toEqual(['payments.1.card.number'])
+    },
+  )
 })
 
 describe('schema in a ref', () => {
@@ -351,6 +446,19 @@ describe('server issues', () => {
     expect(members.items[0]!.field.name.error).toBe('Taken')
   })
 
+  it('gives a moved row’s error its new path, so a later setErrors keeps it there', () => {
+    const form = make({
+      schema,
+      defaultValues: { ...base, members: [{ name: 'a' }, { name: 'b' }] },
+    })
+    form.setErrors({ 'members.1.name': 'Taken' })
+    form.field('members').remove(0)
+    expect(form.allErrors.value).toEqual([{ path: 'members.0.name', message: 'Taken' }])
+    form.setErrors({ name: 'Nope' })
+    expect(form.field('members.0.name').error).toBe('Taken')
+    expect(form.field('members.1.name').error).toBeUndefined()
+  })
+
   it('takes standard issue lists, and clears on a submit', async () => {
     const form = make({ schema, defaultValues: { ...base, name: 'Ada' } })
     form.setErrors([{ path: 'name', message: 'Nope' }, { message: 'Form-wide' }])
@@ -442,6 +550,41 @@ describe('arrays', () => {
 
     members.push({ name: '' })
     expect(members.items[1]!.field.name.error).toBeUndefined()
+  })
+
+  it('resets a row, and a field in it, to its own default after a list change', () => {
+    const form = make({
+      schema,
+      defaultValues: { members: [{ name: 'a' }, { name: 'b' }, { name: 'c' }] },
+    })
+    const members = form.field('members')
+    members.remove(0)
+    members.move(0, 1)
+    form.field('members.0.name').value = 'C'
+    form.field('members.1.name').value = 'B'
+    expect(form.field('members.0').dirty).toBe(true)
+    form.field('members.0').reset()
+    form.field('members.1.name').reset()
+    expect(form.values.value.members).toEqual([{ name: 'c' }, { name: 'b' }])
+    expect(form.field('members.0').dirty).toBe(false)
+    expect(form.field('members.1.name').dirty).toBe(false)
+    // A new row has no default.
+    members.push({ name: 'd' })
+    expect(form.field('members.2').dirty).toBe(true)
+  })
+
+  it('keeps a row that has no default on reset, and clears its touched and edited state', () => {
+    const form = make({ schema, defaultValues: { members: [{ name: 'a' }] } })
+    form.field('members').push({ name: 'd' })
+    form.field('members.1.name').value = 'e'
+    form.field('members.1.name').touch()
+    form.field('members.1.name').reset()
+    expect(form.values.value.members).toEqual([{ name: 'a' }, { name: 'e' }])
+    expect(form.field('members.1.name').touched).toBe(false)
+    form.field('members.1').reset()
+    expect(form.values.value.members).toEqual([{ name: 'a' }, { name: 'e' }])
+    // A row with no default still compares with undefined, so it stays dirty.
+    expect(form.field('members.1').dirty).toBe(true)
   })
 
   it('shows a list-level error once an item is touched', async () => {

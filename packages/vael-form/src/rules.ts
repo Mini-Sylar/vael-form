@@ -32,12 +32,14 @@ interface State {
   run: number
   promise?: Promise<void>
   error?: unknown
+  /** A list change may have cleared this error (a duplicate removed): ask again. */
+  recheck?: boolean
 }
 
 /** What the engine needs from the form. */
 export interface RuleHost {
-  values: () => unknown
-  defaults: () => unknown
+  readonly latest: unknown
+  defaultAt(segments: readonly string[], values: unknown): [unknown] | undefined
 }
 
 const NONE = Symbol('none')
@@ -86,8 +88,7 @@ export class RuleEngine {
 
   /** After a schema run: starts the rules whose value changed and whose path has no error. */
   sync(schemaIssues: readonly RawIssue[]): void {
-    const values = this.host.values()
-    const defaults = this.host.defaults()
+    const values = this.host.latest
     const seen = new Set<string>()
     this.rules.forEach((rule, index) => {
       for (const path of expand(values, rule.segments)) {
@@ -110,9 +111,12 @@ export class RuleEngine {
           )
         const segments = toSegments(path)
         const value = getIn(values, segments)
+        const base = this.host.defaultAt(segments, values)
         const blocked =
           schemaIssues.some((issue) => issue.path === path || issue.path.startsWith(`${path}.`)) ||
-          isEqual(value, getIn(defaults, segments))
+          (!!base && isEqual(value, base[0]))
+        const recheck = state.recheck
+        state.recheck = false
         if (blocked) {
           if (!state.blocked || state.status !== 'idle' || state.messages.length) this.cancel(state)
           state.blocked = true
@@ -120,7 +124,16 @@ export class RuleEngine {
           continue
         }
         state.blocked = false
-        if (state.status !== 'idle' && isEqual(state.value, value)) continue
+        if (state.status !== 'idle' && isEqual(state.value, value)) {
+          if (recheck) {
+            // The old error shows until the new answer; a check on its way is superseded.
+            clearTimeout(state.timer)
+            state.abort?.abort()
+            state.run++
+            this.start(state, false)
+          }
+          continue
+        }
         this.cancel(state)
         state.value = value
         // a blur rule waits for the blur (or the submit)
@@ -166,6 +179,28 @@ export class RuleEngine {
       if (under(state.path) && state.error !== undefined) throw state.error
   }
 
+  /** A change to `list`: each state follows its row, a removed row's is cancelled, a failing row's checked again. */
+  move(list: string, to: (path: string) => string | null): void {
+    const states = new Map<string, State>()
+    const busy = new Set<string>()
+    for (const state of this.states.values()) {
+      const path = to(state.path)
+      if (path === null) {
+        this.cancel(state)
+        continue
+      }
+      const key = state.key.slice(0, state.key.indexOf('|') + 1) + path
+      if (this.busy.value.has(state.key)) busy.add(key)
+      Object.assign(state, { key, path })
+      if (state.messages.length && path.startsWith(`${list}.`)) state.recheck = true
+      states.set(key, state)
+    }
+    this.states.clear()
+    for (const [key, state] of states) this.states.set(key, state)
+    this.busy.value = busy
+    this.publish()
+  }
+
   /** Forgets every answer: the values were replaced. */
   clear(): void {
     for (const state of this.states.values()) this.cancel(state)
@@ -184,13 +219,15 @@ export class RuleEngine {
     clearTimeout(state.timer)
     state.timer = undefined
     state.status = 'running'
+    // A new try forgets the last one's failure.
+    state.error = undefined
     const run = ++state.run
     const abort = (state.abort = new AbortController())
     const { value, path } = state
     return (state.promise = Promise.resolve()
       .then(() =>
         state.rule.run(value, {
-          values: this.host.values() as never,
+          values: this.host.latest as never,
           path,
           signal: abort.signal,
         }),

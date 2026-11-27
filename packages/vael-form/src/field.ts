@@ -3,7 +3,7 @@ import type { ComputedRef } from 'vue'
 import type { FormCore } from './core'
 import type { RawIssue } from './issues'
 import { FIELD_KEYS } from './constants'
-import { getIn, isEqual, joinPath, snapshot, toSegments } from './path'
+import { isEqual, joinPath, snapshot, toSegments } from './path'
 import { isAutofilled } from './autofill'
 import { afterPointer, trackPointer } from './pointer'
 import type { Segments } from './path'
@@ -61,7 +61,7 @@ export class FieldImpl {
     this.valueOf_ = lazy(() => computed(() => core.read(segments)))
     this.touchedOf = lazy(() => computed(() => core.touchedSet.value.has(path)))
     this.dirtyOf = lazy(() =>
-      computed(() => !isEqual(core.read(segments), getIn(core.initial.value, segments))),
+      computed(() => !isEqual(core.read(segments), core.defaultAt(segments)?.[0])),
     )
     this.invalidOf = lazy(() => computed(() => this.shown().length > 0))
 
@@ -117,11 +117,10 @@ export class FieldImpl {
     this.watch = (handler, options) => core.watchField(path, handler, options)
     this.validate = () => core.validate(path)
     this.reset = (...value) => {
-      core.setValue(
-        path,
-        value.length ? value[0] : snapshot(getIn(core.initial.value, segments)),
-        false,
-      )
+      // The defaults themselves (never changed in place): a list keeps its rows' keys.
+      const to = value.length ? ([value[0]] as const) : core.defaultAt(segments)
+      // A row added since the defaults has none, so it keeps its value.
+      if (to) core.setValue(path, to[0], false)
       core.untouch(path, true)
     }
 

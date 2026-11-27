@@ -10,30 +10,54 @@ export interface Shape {
   properties?: Record<string, Shape>
   required?: string[]
   items?: Shape
+  prefixItems?: Shape[]
   anyOf?: Shape[]
   oneOf?: Shape[]
   minLength?: number
   maxLength?: number
   minimum?: number
   maximum?: number
+  exclusiveMinimum?: number
+  exclusiveMaximum?: number
+  format?: string
+  /** A JSON Schema pattern, or a Valibot action's own RegExp. */
+  pattern?: string | RegExp
   multipleOf?: number
   minItems?: number
+  /** A literal, such as a union's discriminator. */
+  const?: unknown
+  /** A branch's discriminators, its `const` properties: read once. */
+  consts?: [string, Shape][]
+  /** A union's number, for the cache of each form's active branch. */
+  id?: number
   /** Valibot's own schema, whose pipe holds its limits. */
   node?: Loose
+  /** Valibot's `nullable` or `nullish` wrapper around this value, whose pipe can rule `null` out. */
+  nullable?: Loose
 }
+
+// Valibot's wrappers whose key may be left out of its object.
+const OPTIONAL = ['optional', 'exact_optional', 'nullish', 'undefinedable']
 
 // Valibot has no JSON Schema of its own: its schemas are plain objects, read here the same way.
 // `node` keeps the Valibot schema, for the limits in its pipe (read by the `limits` chunk).
 function fromValibot(schema: Loose): Shape | undefined {
   const type = schema.type as string
-  if (['optional', 'nullable', 'nullish', 'undefinedable'].includes(type))
-    return fromValibot(schema.wrapped)
+  // `non_nullable` and the like take back the `null` the wrapper inside them allowed.
+  const non = type.startsWith('non_')
+  if (non || type === 'nullable' || type === 'nullish') {
+    const inner = fromValibot(schema.wrapped)
+    // `non_optional` takes back only the `undefined`.
+    const nullable = type === 'non_optional' ? inner?.nullable : non ? undefined : schema
+    return inner && { ...inner, nullable }
+  }
+  if (OPTIONAL.includes(type)) return fromValibot(schema.wrapped)
   if (type.endsWith('object')) {
     const properties: Record<string, Shape> = {}
     const required: string[] = []
     for (const [key, entry] of Object.entries(schema.entries as Loose)) {
       properties[key] = fromValibot(entry) ?? {}
-      if (!['optional', 'nullish', 'undefinedable'].includes(entry.type)) required.push(key)
+      if (!OPTIONAL.includes(entry.type)) required.push(key)
     }
     return { type: 'object', properties, required }
   }
@@ -42,14 +66,15 @@ function fromValibot(schema: Loose): Shape | undefined {
     return { anyOf: (schema.options as Loose[]).map((option) => fromValibot(option) ?? {}) }
   if (['string', 'number', 'boolean'].includes(type)) return { type, node: schema }
   if (type === 'picklist' || type === 'enum') return { type: 'string' }
+  if (type === 'literal') return { const: schema.literal }
   return undefined
 }
 
 /** The schema's shape, when its library can say: Zod and ArkType through JSON Schema, Valibot read directly. */
-export function shapeOf(schema: StandardSchemaV1): Shape | undefined {
+export function shapeOf(schema: StandardSchemaV1, side = 'input'): Shape | undefined {
   const standard = schema['~standard'] as Loose
   try {
-    const shape = standard.jsonSchema?.input({
+    const shape = standard.jsonSchema?.[side]({
       target: 'draft-2020-12',
       // A date or a transform has no JSON Schema: it reads as "anything", not as a failure.
       libraryOptions: { unrepresentable: 'any' },
@@ -65,7 +90,7 @@ export const has = (shape: Shape | undefined, type: string): boolean =>
     !![...(shape.anyOf ?? []), ...(shape.oneOf ?? [])].some((branch) => has(branch, type)))
 
 /** A child's shape: an object's property (in any branch of a union) or a list's item. */
-function child(shape: Shape | undefined, key: string): Shape | undefined {
+export function child(shape: Shape | undefined, key: string): Shape | undefined {
   if (!shape) return undefined
   if (isIndex(key) && shape.items) return shape.items
   if (shape.properties?.[key]) return shape.properties[key]
@@ -85,19 +110,68 @@ export function shapeAt(root: Shape | undefined, segments: Segments): Shape | un
 export const isObjectShape = (shape: Shape | undefined): boolean => has(shape, 'object')
 export const isListShape = (shape: Shape | undefined): boolean => has(shape, 'array')
 
+/** The one branch of a union whose discriminators (its `const` properties) the value matches. */
+export function branchOf(shape: Shape | undefined, value: unknown): Shape | undefined {
+  const fits = (shape?.anyOf ?? shape?.oneOf)?.filter(
+    (branch) =>
+      branch.properties &&
+      // Read once: a wide branch would cost every field each keystroke.
+      (branch.consts ??= Object.entries(branch.properties).filter(
+        ([, prop]) => 'const' in prop,
+      )).every(([key, prop]) => (value as Loose | undefined)?.[key] === prop.const),
+  )
+  return fits?.length === 1 ? fits[0] : shape
+}
+
 /**
  * The values as the schema should see them: a required group the data doesn't have yet is an
  * empty object, so its fields report their own errors instead of the group reporting one. Returns
  * `value` itself when nothing is missing.
  */
-export function withGroups(shape: Shape | undefined, value: unknown): unknown {
+export function withGroups(given: Shape | undefined, value: unknown): unknown {
+  // Values are never changed in place: a list or a row the edit didn't reach is not read again.
+  const done = isPlainObject(value) ? filled.get(value as object) : undefined
+  if (done && done[0] === given) return done[1]
+  const out = fill(given, value)
+  if (isPlainObject(value)) filled.set(value, [given, out])
+  return out
+}
+
+const filled = new WeakMap<object, [Shape | undefined, unknown]>()
+
+function fill(given: Shape | undefined, value: unknown): unknown {
+  const shape = branchOf(given, value)
   if (shape?.type !== 'object' || !shape.properties) return value
   if (value !== undefined && !isPlainObject(value)) return value
   let out = value as Record<string, unknown> | undefined
-  for (const [key, child] of Object.entries(shape.properties)) {
+  for (const [key, prop] of Object.entries(shape.properties)) {
     const current = out?.[key]
+    const child = branchOf(prop, current)!
+    if (Array.isArray(current)) {
+      // A list's rows have their groups too, a nullable list's as well; a tuple's positions differ.
+      const [list, other] = [child, ...(child.anyOf ?? [])].filter(
+        (one) => one.items && !one.prefixItems,
+      )
+      if (list && !other) {
+        let rows = filled.get(current)
+        if (rows?.[0] !== list) {
+          const made = current.map((row) =>
+            isPlainObject(row) ? withGroups(list.items, row) : row,
+          )
+          filled.set(
+            current,
+            (rows = [list, made.some((row, i) => row !== current[i]) ? made : current]),
+          )
+        }
+        if (rows[1] !== current) out = { ...out, [key]: rows[1] }
+        continue
+      }
+    }
+    // Only a group can be missing: a wide form doesn't scan `required` for each of its fields.
+    if (child.type !== 'object') continue
     const missing = current === undefined && !!shape.required?.includes(key)
-    if (child.type !== 'object' || (!missing && !isPlainObject(current))) continue
+    // A missing group that may be `null` isn't made: it has one error, for the group.
+    if (missing ? child.nullable || has(prop, 'null') : !isPlainObject(current)) continue
     const next = withGroups(child, missing ? {} : current)
     if (next !== current) out = { ...out, [key]: next }
   }
