@@ -117,6 +117,8 @@ interface Watcher {
 export class FormCore {
   readonly id: string
   readonly values: ShallowRef<unknown>
+  /** The scope the form was made in: its own watchers stop with it. */
+  private readonly scope = getCurrentScope()
   readonly initial: ShallowRef<unknown>
   readonly issueMap: ShallowRef<IssueMap> = shallowRef(EMPTY_ISSUES)
   readonly serverMap: ShallowRef<IssueMap> = shallowRef(EMPTY_ISSUES)
@@ -233,7 +235,9 @@ export class FormCore {
       this.limits = module.limitsAt
       this.limitsReady.value = true
     })
-    return this.limitsReady.value ? this.limits!(root, segments, this.schema, this.values) : {}
+    return this.limitsReady.value
+      ? this.limits!(root, segments, this.schema, this.values, this.scope)
+      : {}
   }
 
   // ---- config
@@ -307,10 +311,11 @@ export class FormCore {
   private inheritKeys = (from: unknown[], to: unknown[]): void =>
     void this.keys.set(to, this.keysOf(from))
 
-  /** Gives each list in `next` the keys of the defaults' list there, by position. */
+  /** Gives each list in `next` that has no keys yet those of the defaults' list there, by position. */
   private align(next: any, base: any): void {
-    if (Array.isArray(next) && Array.isArray(base)) this.inheritKeys(base, next)
-    else if (!isPlainObject(next) || !isPlainObject(base)) return
+    if (Array.isArray(next) && Array.isArray(base)) {
+      if (!this.keys.has(next)) this.inheritKeys(base, next)
+    } else if (!isPlainObject(next) || !isPlainObject(base)) return
     for (const key in next) this.align((next as any)[key], (base as any)[key])
   }
 
@@ -327,7 +332,10 @@ export class FormCore {
 
   /** `user` is false for a change the form makes (a reset), which `field.watch` doesn't report. */
   setValue = (path: string, value: unknown, user = true): void => {
-    const next = setIn(this.latest, toSegments(path), value, this.inheritKeys)
+    const segments = toSegments(path)
+    // A list written whole lines up with the defaults' rows by position, as in setValues.
+    this.align(value, getIn(this.initial.value, segments))
+    const next = setIn(this.latest, segments, value, this.inheritKeys)
     if (user) {
       // A write that changes nothing is not an edit a watcher will be told about.
       if (next !== this.latest) this.userEdits++

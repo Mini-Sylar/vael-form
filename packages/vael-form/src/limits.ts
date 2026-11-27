@@ -1,5 +1,5 @@
 import { effectScope, shallowRef, watchSyncEffect } from 'vue'
-import type { Ref, ShallowRef } from 'vue'
+import type { EffectScope, Ref, ShallowRef } from 'vue'
 import { getIn, isIndex } from './path'
 import type { Segments } from './path'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
@@ -50,22 +50,19 @@ const outputs = new WeakMap<object, Shape | undefined>()
 type Pick = (union: Shape, path: Segments) => Shape | undefined
 
 // Each form's active branch per union and path, set only when it changes: other keystrokes don't reach attrs.
-const picks = new WeakMap<object, WeakMap<Shape, Record<string, ShallowRef<Shape | undefined>>>>()
+const picks = new WeakMap<object, Record<string, ShallowRef<Shape | undefined>>>()
+let unions = 0
 
 const picker =
-  (values: Ref<unknown>): Pick =>
+  (values: Ref<unknown>, scope = effectScope(true)): Pick =>
   (union, path) => {
-    let byUnion = picks.get(values)
-    if (!byUnion) picks.set(values, (byUnion = new WeakMap()))
-    let byPath = byUnion.get(union)
-    if (!byPath) byUnion.set(union, (byPath = {}))
-    const pick = (byPath[path.join('.')] ??= shallowRef())
-    // Detached: the component that read attrs first mustn't stop it on unmount.
-    if (!pick.value)
-      effectScope(true).run(() =>
-        watchSyncEffect(() => (pick.value = branchOf(union, getIn(values.value, path)))),
-      )
-    return pick.value
+    let byPath = picks.get(values)
+    if (!byPath) picks.set(values, (byPath = {}))
+    const pick = (byPath[`${(union.id ??= ++unions)}:${path}`] ??= shallowRef())
+    const read = () => branchOf(union, getIn(values.value, path))
+    // In the form's scope: it stops with the form, not with the component that read attrs first.
+    if (!pick.value && scope.active) scope.run(() => watchSyncEffect(() => (pick.value = read())))
+    return pick.value ?? read()
   }
 
 /** The shapes the parent of the last key may have: a union's active branch (by its discriminators), else each branch. */
@@ -165,10 +162,11 @@ export function limitsAt(
   segments: Segments,
   schema: StandardSchemaV1,
   values: Ref<unknown>,
+  scope?: EffectScope,
 ): Record<string, string | number | boolean> {
   const key = segments[segments.length - 1]
   if (key === undefined) return {}
-  const pick = picker(values)
+  const pick = picker(values, scope)
   const outs = () => {
     if (!outputs.has(schema)) outputs.set(schema, shapeOf(schema, 'output'))
     return parents(outputs.get(schema), segments, pick).map((parent) => child(parent, key))

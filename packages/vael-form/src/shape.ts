@@ -28,6 +28,8 @@ export interface Shape {
   const?: unknown
   /** A branch's discriminators, its `const` properties: read once. */
   consts?: [string, Shape][]
+  /** A union's number, for the cache of each form's active branch. */
+  id?: number
   /** Valibot's own schema, whose pipe holds its limits. */
   node?: Loose
   /** Valibot's `nullable` or `nullish` wrapper around this value, whose pipe can rule `null` out. */

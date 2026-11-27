@@ -125,8 +125,13 @@ export class RuleEngine {
         }
         state.blocked = false
         if (state.status !== 'idle' && isEqual(state.value, value)) {
-          // The old error shows until the new answer.
-          if (recheck) this.start(state, true)
+          if (recheck) {
+            // The old error shows until the new answer; a check on its way is superseded.
+            clearTimeout(state.timer)
+            state.abort?.abort()
+            state.run++
+            this.start(state, false)
+          }
           continue
         }
         this.cancel(state)
