@@ -11,7 +11,7 @@ export default defineConfig({
     'runtime/plugin': './src/runtime/plugin.ts',
   },
   // The plugin imports the package by name, as the app does, so they share one copy.
-  external: ['vael-form', '#app', /^@nuxt\//],
+  deps: { neverBundle: ['vael-form', '#app', /^@nuxt\//] },
   format: ['esm'],
   platform: 'neutral',
   // The code uses ES2023 array methods (`toSpliced`), so say so instead of leaving it to chance.
