@@ -1,4 +1,6 @@
-import { isIndex } from './path'
+import { effectScope, shallowRef, watchSyncEffect } from 'vue'
+import type { Ref, ShallowRef } from 'vue'
+import { getIn, isIndex } from './path'
 import type { Segments } from './path'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { branchOf, child, has, shapeOf } from './shape'
@@ -45,17 +47,44 @@ function withoutNull(shape: Shape): Shape {
 
 const outputs = new WeakMap<object, Shape | undefined>()
 
+type Pick = (union: Shape, path: Segments) => Shape | undefined
+
+// Each form's active branch per union and path, set only when it changes: other keystrokes don't reach attrs.
+const picks = new WeakMap<object, WeakMap<Shape, Record<string, ShallowRef<Shape | undefined>>>>()
+
+const picker =
+  (values: Ref<unknown>): Pick =>
+  (union, path) => {
+    let byUnion = picks.get(values)
+    if (!byUnion) picks.set(values, (byUnion = new WeakMap()))
+    let byPath = byUnion.get(union)
+    if (!byPath) byUnion.set(union, (byPath = {}))
+    const pick = (byPath[path.join('.')] ??= shallowRef())
+    // Detached: the component that read attrs first mustn't stop it on unmount.
+    if (!pick.value)
+      effectScope(true).run(() =>
+        watchSyncEffect(() => (pick.value = branchOf(union, getIn(values.value, path)))),
+      )
+    return pick.value
+  }
+
 /** The shapes the parent of the last key may have: a union's active branch (by its discriminators), else each branch. */
-function parents(shape: Shape | undefined, segments: Segments, value: () => any): Shape[] {
+function parents(
+  shape: Shape | undefined,
+  segments: Segments,
+  pick: Pick,
+  at: Segments = [],
+): Shape[] {
   const branches = shape?.anyOf ?? shape?.oneOf
   if (branches) {
-    // Values are read only at a union, so a form without one doesn't redo attrs on each change.
-    const active = branchOf(shape, value())
-    return (active === shape ? branches : [active!]).flatMap((one) => parents(one, segments, value))
+    const active = pick(shape!, at)
+    return (active === shape ? branches : [active!]).flatMap((one) =>
+      parents(one, segments, pick, at),
+    )
   }
   if (!shape || segments.length < 2) return shape ? [shape] : []
   const [key, ...rest] = segments
-  return parents(child(shape, key!), rest, () => value()?.[key!])
+  return parents(child(shape, key!), rest, pick, [...at, key!])
 }
 
 /** Whether a value that may be `null` comes out of the schema as something else, so empty still fails. */
@@ -135,16 +164,17 @@ export function limitsAt(
   root: Shape,
   segments: Segments,
   schema: StandardSchemaV1,
-  values: () => unknown,
+  values: Ref<unknown>,
 ): Record<string, string | number | boolean> {
   const key = segments[segments.length - 1]
   if (key === undefined) return {}
+  const pick = picker(values)
   const outs = () => {
     if (!outputs.has(schema)) outputs.set(schema, shapeOf(schema, 'output'))
-    return parents(outputs.get(schema), segments, values).map((parent) => child(parent, key))
+    return parents(outputs.get(schema), segments, pick).map((parent) => child(parent, key))
   }
   // With no branch picked: the first branch's limits, and `aria-required` only if every branch has it.
-  const all = parents(root, segments, values).flatMap((parent) => {
+  const all = parents(root, segments, pick).flatMap((parent) => {
     const given = child(parent, key)
     return given ? [attrsFor(given, isIndex(key) || !!parent.required?.includes(key), outs)] : []
   })

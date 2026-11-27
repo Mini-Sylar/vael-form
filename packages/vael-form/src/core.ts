@@ -233,9 +233,7 @@ export class FormCore {
       this.limits = module.limitsAt
       this.limitsReady.value = true
     })
-    return this.limitsReady.value
-      ? this.limits!(root, segments, this.schema, () => this.values.value)
-      : {}
+    return this.limitsReady.value ? this.limits!(root, segments, this.schema, this.values) : {}
   }
 
   // ---- config
@@ -305,9 +303,15 @@ export class FormCore {
     this.values.value = next
   }
 
-  private inheritKeys = (from: unknown[], to: unknown[]): void => {
-    const keys = this.keys.get(from)
-    if (keys) this.keys.set(to, keys)
+  // Made now if not yet, so the copy and the defaults it came from share their rows' keys.
+  private inheritKeys = (from: unknown[], to: unknown[]): void =>
+    void this.keys.set(to, this.keysOf(from))
+
+  /** Gives each list in `next` the keys of the defaults' list there, by position. */
+  private align(next: any, base: any): void {
+    if (Array.isArray(next) && Array.isArray(base)) this.inheritKeys(base, next)
+    else if (!isPlainObject(next) || !isPlainObject(base)) return
+    for (const key in next) this.align((next as any)[key], (base as any)[key])
   }
 
   keysOf(array: unknown[]): string[] {
@@ -335,7 +339,10 @@ export class FormCore {
 
   setValues = (values: unknown): void => {
     this.seenEdits = this.userEdits // an edit made earlier in this tick is overwritten, not reported
-    this.commit(snapshot(values))
+    const next = snapshot(values)
+    // The new rows line up with the defaults' by position: a rule skips a row still at its default.
+    this.align(next, this.initial.value)
+    this.commit(next)
     this.clearErrors()
   }
 
@@ -452,8 +459,6 @@ export class FormCore {
       this.revealedSet.value = remapSet(this.revealedSet.value, prefix, remap)
       this.editedSet.value = remapSet(this.editedSet.value, prefix, remap)
       this.freshSet.value = remapSet(this.freshSet.value, prefix, remap)
-      // A rule's last answer and pending run follow the row, so an unchanged row isn't checked again.
-      this.engine?.move((key) => remapKey(key, prefix, remap))
       if (this.serverMap.value.size) {
         const shifted = new Map<string, readonly RawIssue[]>()
         for (const [key, list] of this.serverMap.value) {
@@ -465,6 +470,8 @@ export class FormCore {
         this.serverMap.value = shifted
       }
     }
+    // A rule's answer follows its row; a failing row is asked again, as its error may be about another.
+    this.engine?.move(path, (key) => remapKey(key, `${path}.`, (i) => moved[i] ?? null))
     if (fresh) {
       const added = order.flatMap((from, to) => (from < 0 ? `${path}.${to}` : []))
       this.freshSet.value = new Set([...this.freshSet.value, ...added])
@@ -657,7 +664,7 @@ export class FormCore {
       return (this.engine = new RuleEngine(
         this.options.rules as never,
         this.options.debounce ?? 0,
-        { values: () => this.latest, defaults: () => this.initial.value },
+        this,
         this.ruleIssues,
         this.ruleBusy,
       ))

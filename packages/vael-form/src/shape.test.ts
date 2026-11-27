@@ -359,5 +359,48 @@ it('keeps a wide union’s attrs about as quick as a plain form’s on each keys
   }
   await time(plain) // warm up
   const [one, many] = [await time(plain), await time(union)]
-  expect(many).toBeLessThan(one * 5) // each field once read every branch's properties
+  expect(many).toBeLessThan(one * 1.5) // attrs once read every branch, then followed every value
+})
+
+describe.each(
+  Object.entries({
+    zod: z.object({
+      pay: z.discriminatedUnion('type', [
+        z.object({ type: z.literal('card'), name: z.string(), amount: z.number().min(1) }),
+        z.object({ type: z.literal('cash'), name: z.string(), amount: z.number().nullable() }),
+      ]),
+    }),
+    valibot: v.object({
+      pay: v.variant('type', [
+        v.object({
+          type: v.literal('card'),
+          name: v.string(),
+          amount: v.pipe(v.number(), v.minValue(1)),
+        }),
+        v.object({ type: v.literal('cash'), name: v.string(), amount: v.nullable(v.number()) }),
+      ]),
+    }),
+  }),
+)('%s: a union’s attrs', (_, schema) => {
+  it('follow only the discriminator, not every keystroke in the form', async () => {
+    const scope = effectScope()
+    const form = scope.run(() =>
+      useForm({ schema: schema as never, defaultValues: { pay: { type: 'card' } } as never }),
+    )!
+    const field = (path: string) => form.field(path as never) as { attrs: any; value: unknown }
+    let runs = 0
+    scope.run(() => watchEffect(() => void (runs++, field('pay.amount').attrs)))
+    await flush()
+    const before = runs
+    for (const name of ['a', 'ab', 'abc']) {
+      field('pay.name').value = name
+      await flush()
+    }
+    expect(runs).toBe(before) // another field's value doesn't pick the branch
+    field('pay.type').value = 'cash'
+    await flush()
+    expect(runs).toBeGreaterThan(before)
+    expect(field('pay.amount').attrs.min).toBeUndefined()
+    scope.stop()
+  })
 })

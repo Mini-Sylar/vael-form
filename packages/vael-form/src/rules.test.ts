@@ -213,16 +213,17 @@ describe('rules', () => {
     await flush()
     members.move(0, 1)
     await flush()
-    expect(seen).toEqual([]) // the rows moved, their values didn't change
+    expect(seen).toEqual(['bad@x.co', 'bad@x.co']) // only the failing row, once per change
     expect(members.items[1]!.field.email.error).toBe('Not allowed') // the answer moved too
 
+    seen.length = 0
     members.insert(0, { email: 'd@x.co' })
     await flush()
-    expect(seen).toEqual(['d@x.co'])
+    expect(seen.toSorted()).toEqual(['bad@x.co', 'd@x.co'])
 
     form.field('members.2.email').value = 'e@x.co'
     await flush()
-    expect(seen).toEqual(['d@x.co', 'e@x.co'])
+    expect(seen.toSorted()).toEqual(['bad@x.co', 'd@x.co', 'e@x.co'])
     expect(form.valid.value).toBe(true)
   })
 
@@ -255,6 +256,65 @@ describe('rules', () => {
     expect(members.items[0]!.field.email.pending).toBe(true)
     await flush(40)
     expect(members.items[0]!.field.email.error).toBe('Not allowed')
+  })
+})
+
+describe('rules after a list change', () => {
+  it('checks a failing row again, so an error about another row clears; a passing row isn’t', async () => {
+    const seen: string[] = []
+    const form = make({
+      schema,
+      defaultValues: defaults,
+      showErrors: 'input',
+      rules: {
+        'members.*.email': (value, { values }) => {
+          seen.push(value)
+          const all = (values.members ?? []).map((member) => member.email)
+          return all.indexOf(value) !== all.lastIndexOf(value) ? 'Duplicate' : undefined
+        },
+      },
+    })
+    await warm(form)
+    const members = form.field('members')
+    for (const email of ['a@x.co', 'b@x.co', 'a@x.co']) members.push({ email })
+    await flush()
+    expect(members.items[0]!.field.email.error).toBe('Duplicate')
+    seen.length = 0
+    members.remove(2)
+    await flush()
+    expect(seen).toEqual(['a@x.co']) // only the row that failed
+    expect(form.valid.value).toBe(true)
+  })
+
+  it('compares a row with its own default, not the one at its index', async () => {
+    const seen: string[] = []
+    const form = make({
+      schema,
+      defaultValues: { username: 'ada', members: [{ email: 'a@x.co' }, { email: 'b@x.co' }] },
+      showErrors: 'input',
+      rules: { 'members.*.email': (value) => void seen.push(value) },
+    })
+    await warm(form)
+    const members = form.field('members')
+    members.move(0, 1)
+    await flush()
+    members.remove(0)
+    await flush()
+    expect(seen).toEqual([]) // each row is still its own default
+    members.insert(0, { email: 'b@x.co' })
+    await flush()
+    expect(seen).toEqual(['b@x.co']) // a new row has no default
+
+    seen.length = 0
+    form.reset()
+    members.move(0, 1)
+    await flush()
+    form.setValues({ username: 'ada', members: [{ email: 'a@x.co' }, { email: 'b@x.co' }] })
+    await flush()
+    members.reset()
+    members.swap(0, 1)
+    await flush()
+    expect(seen).toEqual([]) // reset, setValues and a field's reset line the rows up with the defaults
   })
 })
 

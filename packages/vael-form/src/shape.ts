@@ -134,22 +134,22 @@ export function withGroups(given: Shape | undefined, value: unknown): unknown {
   for (const [key, prop] of Object.entries(shape.properties)) {
     const current = out?.[key]
     const child = branchOf(prop, current)!
-    // A list's rows have their groups too, a nullable list's as well; a tuple's positions differ.
-    const [list, other] = [child, ...(child.anyOf ?? [])].filter(
-      (one) => one.items && !one.prefixItems,
-    )
-    if (list && !other && Array.isArray(current)) {
-      const rows = current.map((row) => (isPlainObject(row) ? withGroups(list.items, row) : row))
-      if (rows.some((row, i) => row !== current[i])) out = { ...out, [key]: rows }
-      continue
+    if (Array.isArray(current)) {
+      // A list's rows have their groups too, a nullable list's as well; a tuple's positions differ.
+      const [list, other] = [child, ...(child.anyOf ?? [])].filter(
+        (one) => one.items && !one.prefixItems,
+      )
+      if (list && !other) {
+        const rows = current.map((row) => (isPlainObject(row) ? withGroups(list.items, row) : row))
+        if (rows.some((row, i) => row !== current[i])) out = { ...out, [key]: rows }
+        continue
+      }
     }
+    // Only a group can be missing: a wide form doesn't scan `required` for each of its fields.
+    if (child.type !== 'object') continue
     const missing = current === undefined && !!shape.required?.includes(key)
     // A missing group that may be `null` isn't made: it has one error, for the group.
-    if (
-      child.type !== 'object' ||
-      (missing ? child.nullable || has(prop, 'null') : !isPlainObject(current))
-    )
-      continue
+    if (missing ? child.nullable || has(prop, 'null') : !isPlainObject(current)) continue
     const next = withGroups(child, missing ? {} : current)
     if (next !== current) out = { ...out, [key]: next }
   }

@@ -2,7 +2,7 @@ import type { ShallowRef } from 'vue'
 import { groupIssues, messagesOf } from './issues'
 import { isSchema, schemaRule } from './schema-rule'
 import type { IssueMap, Message, RawIssue } from './issues'
-import { expand, getIn, isEqual, toSegments } from './path'
+import { expand, getIn, isEqual, isIndex, toSegments } from './path'
 import type { RuleContext, RuleInput, RuleResult } from './types'
 
 type Run = (value: unknown, context: RuleContext<unknown>) => RuleResult | Promise<RuleResult>
@@ -32,12 +32,15 @@ interface State {
   run: number
   promise?: Promise<void>
   error?: unknown
+  /** A list change may have cleared this error (a duplicate removed): ask again. */
+  recheck?: boolean
 }
 
 /** What the engine needs from the form. */
 export interface RuleHost {
-  values: () => unknown
-  defaults: () => unknown
+  readonly latest: unknown
+  readonly initial: { readonly value: unknown }
+  keysOf(list: unknown[]): string[]
 }
 
 const NONE = Symbol('none')
@@ -86,8 +89,7 @@ export class RuleEngine {
 
   /** After a schema run: starts the rules whose value changed and whose path has no error. */
   sync(schemaIssues: readonly RawIssue[]): void {
-    const values = this.host.values()
-    const defaults = this.host.defaults()
+    const values = this.host.latest
     const seen = new Set<string>()
     this.rules.forEach((rule, index) => {
       for (const path of expand(values, rule.segments)) {
@@ -112,7 +114,9 @@ export class RuleEngine {
         const value = getIn(values, segments)
         const blocked =
           schemaIssues.some((issue) => issue.path === path || issue.path.startsWith(`${path}.`)) ||
-          isEqual(value, getIn(defaults, segments))
+          this.isDefault(values, segments)
+        const recheck = state.recheck
+        state.recheck = false
         if (blocked) {
           if (!state.blocked || state.status !== 'idle' || state.messages.length) this.cancel(state)
           state.blocked = true
@@ -120,7 +124,11 @@ export class RuleEngine {
           continue
         }
         state.blocked = false
-        if (state.status !== 'idle' && isEqual(state.value, value)) continue
+        if (state.status !== 'idle' && isEqual(state.value, value)) {
+          // The old error shows until the new answer.
+          if (recheck) this.start(state, true)
+          continue
+        }
         this.cancel(state)
         state.value = value
         // a blur rule waits for the blur (or the submit)
@@ -166,8 +174,8 @@ export class RuleEngine {
       if (under(state.path) && state.error !== undefined) throw state.error
   }
 
-  /** A list change moved rows: each state follows its row, and a removed row's is cancelled. */
-  move(to: (path: string) => string | null): void {
+  /** A change to `list`: each state follows its row, a removed row's is cancelled, a failing row's checked again. */
+  move(list: string, to: (path: string) => string | null): void {
     const states = new Map<string, State>()
     const busy = new Set<string>()
     for (const state of this.states.values()) {
@@ -179,6 +187,7 @@ export class RuleEngine {
       const key = state.key.slice(0, state.key.indexOf('|') + 1) + path
       if (this.busy.value.has(state.key)) busy.add(key)
       Object.assign(state, { key, path })
+      if (state.messages.length && path.startsWith(`${list}.`)) state.recheck = true
       states.set(key, state)
     }
     this.states.clear()
@@ -192,6 +201,25 @@ export class RuleEngine {
     for (const state of this.states.values()) this.cancel(state)
     this.states.clear()
     this.publish()
+  }
+
+  private rows = new WeakMap<string[], Map<string, number>>()
+
+  /** Whether the value at `segments` is still its default: a row is matched by its key, so a new row has none. */
+  private isDefault(value: unknown, segments: readonly string[]): boolean {
+    let base = this.host.initial.value
+    for (const key of segments) {
+      if (Array.isArray(value) && Array.isArray(base) && isIndex(key)) {
+        const keys = this.host.keysOf(base)
+        let rows = this.rows.get(keys)
+        if (!rows) this.rows.set(keys, (rows = new Map(keys.map((row, i) => [row, i]))))
+        const at = rows.get(this.host.keysOf(value)[+key]!)
+        if (at === undefined) return false
+        base = base[at]
+      } else base = getIn(base, [key])
+      value = getIn(value, [key])
+    }
+    return isEqual(value, base)
   }
 
   private start(state: State, immediate: boolean): void {
@@ -213,7 +241,7 @@ export class RuleEngine {
     return (state.promise = Promise.resolve()
       .then(() =>
         state.rule.run(value, {
-          values: this.host.values() as never,
+          values: this.host.latest as never,
           path,
           signal: abort.signal,
         }),

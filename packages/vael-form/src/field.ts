@@ -119,7 +119,8 @@ export class FieldImpl {
     this.reset = (...value) => {
       core.setValue(
         path,
-        value.length ? value[0] : snapshot(getIn(core.initial.value, segments)),
+        // The defaults themselves (never changed in place): a list keeps its rows' keys.
+        value.length ? value[0] : getIn(core.initial.value, segments),
         false,
       )
       core.untouch(path, true)
