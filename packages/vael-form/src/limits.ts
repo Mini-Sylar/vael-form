@@ -1,4 +1,4 @@
-import { effectScope, shallowRef, watchSyncEffect } from 'vue'
+import { shallowRef, watch } from 'vue'
 import type { EffectScope, Ref, ShallowRef } from 'vue'
 import { getIn, isIndex } from './path'
 import type { Segments } from './path'
@@ -49,20 +49,55 @@ const outputs = new WeakMap<object, Shape | undefined>()
 
 type Pick = (union: Shape, path: Segments) => Shape | undefined
 
+/** The form's values, as a ref and as read without tracking. */
+interface FormValues {
+  readonly values: Ref<unknown>
+  readonly latest: unknown
+}
+
+interface Choice {
+  union: Shape
+  path: Segments
+  /** The value at `path` the branch was read from. */
+  at: unknown
+  pick: ShallowRef<Shape | undefined>
+}
+
 // Each form's active branch per union and path, set only when it changes: other keystrokes don't reach attrs.
-const picks = new WeakMap<object, Record<string, ShallowRef<Shape | undefined>>>()
+const choices = new WeakMap<object, Map<string, Choice>>()
 let unions = 0
 
 const picker =
-  (values: Ref<unknown>, scope = effectScope(true)): Pick =>
+  ({ values, latest }: FormValues, scope?: EffectScope): Pick =>
   (union, path) => {
-    let byPath = picks.get(values)
-    if (!byPath) picks.set(values, (byPath = {}))
-    const pick = (byPath[`${(union.id ??= ++unions)}:${path}`] ??= shallowRef())
-    const read = () => branchOf(union, getIn(values.value, path))
-    // In the form's scope: it stops with the form, not with the component that read attrs first.
-    if (!pick.value && scope.active) scope.run(() => watchSyncEffect(() => (pick.value = read())))
-    return pick.value ?? read()
+    let all = choices.get(values)
+    if (!all && scope?.active) {
+      const made = (all = new Map())
+      choices.set(values, made)
+      // One watcher per form, in its scope: it stops with the form, not with the component that read attrs first.
+      scope.run(() =>
+        watch(
+          values,
+          (now) => {
+            for (const one of made.values()) {
+              const at = getIn(now, one.path)
+              if (at !== one.at) one.pick.value = branchOf(one.union, (one.at = at))
+            }
+          },
+          { flush: 'sync' },
+        ),
+      )
+    }
+    // A form made outside a scope reads the values itself.
+    if (!all) return branchOf(union, getIn(values.value, path))
+    const key = `${(union.id ??= ++unions)}:${path}`
+    let one = all.get(key)
+    if (!one) {
+      // Not a dependency of attrs: the watcher is.
+      const at = getIn(latest, path)
+      all.set(key, (one = { union, path, at, pick: shallowRef(branchOf(union, at)) }))
+    }
+    return one.pick.value
   }
 
 /** The shapes the parent of the last key may have: a union's active branch (by its discriminators), else each branch. */
@@ -161,12 +196,12 @@ export function limitsAt(
   root: Shape,
   segments: Segments,
   schema: StandardSchemaV1,
-  values: Ref<unknown>,
+  form: FormValues,
   scope?: EffectScope,
 ): Record<string, string | number | boolean> {
   const key = segments[segments.length - 1]
   if (key === undefined) return {}
-  const pick = picker(values, scope)
+  const pick = picker(form, scope)
   const outs = () => {
     if (!outputs.has(schema)) outputs.set(schema, shapeOf(schema, 'output'))
     return parents(outputs.get(schema), segments, pick).map((parent) => child(parent, key))

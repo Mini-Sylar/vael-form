@@ -552,6 +552,27 @@ describe('arrays', () => {
     expect(members.items[1]!.field.name.error).toBeUndefined()
   })
 
+  it('resets a row, and a field in it, to its own default after a list change', () => {
+    const form = make({
+      schema,
+      defaultValues: { members: [{ name: 'a' }, { name: 'b' }, { name: 'c' }] },
+    })
+    const members = form.field('members')
+    members.remove(0)
+    members.move(0, 1)
+    form.field('members.0.name').value = 'C'
+    form.field('members.1.name').value = 'B'
+    expect(form.field('members.0').dirty).toBe(true)
+    form.field('members.0').reset()
+    form.field('members.1.name').reset()
+    expect(form.values.value.members).toEqual([{ name: 'c' }, { name: 'b' }])
+    expect(form.field('members.0').dirty).toBe(false)
+    expect(form.field('members.1.name').dirty).toBe(false)
+    // A new row has no default.
+    members.push({ name: 'd' })
+    expect(form.field('members.2').dirty).toBe(true)
+  })
+
   it('shows a list-level error once an item is touched', async () => {
     const listed = z.object({ tags: z.array(z.string()).min(2, 'Two tags') })
     const form = make({ schema: listed, defaultValues: { tags: ['a'] }, showErrors: 'blur' })

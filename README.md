@@ -511,7 +511,7 @@ const list = form.field('members') // a list's rows and operations live on its f
 <button type="button" @click="list.push({ name: '' })">Add</button>
 ```
 
-`push`, `insert`, `remove`, `move`, `swap`, `replace`. `item.key` is stable through edits and moves, and touched state follows the item. The model's list is an array: `members.value.splice(1, 1)`, `push` or `sort` on it is a list change like these, with the keys, touched state and server errors following their rows.
+`push`, `insert`, `remove`, `move`, `swap`, `replace`. `item.key` is stable through edits and moves, and touched state follows the item. A row's `reset()` and `dirty` use its own default, wherever it has moved. The model's list is an array: `members.value.splice(1, 1)`, `push` or `sort` on it is a list change like these, with the keys, touched state and server errors following their rows.
 
 ## Unions, tuples and dynamic schemas
 

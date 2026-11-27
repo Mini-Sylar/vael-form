@@ -129,6 +129,17 @@ export function branchOf(shape: Shape | undefined, value: unknown): Shape | unde
  * `value` itself when nothing is missing.
  */
 export function withGroups(given: Shape | undefined, value: unknown): unknown {
+  // Values are never changed in place: a list or a row the edit didn't reach is not read again.
+  const done = isPlainObject(value) ? filled.get(value as object) : undefined
+  if (done && done[0] === given) return done[1]
+  const out = fill(given, value)
+  if (isPlainObject(value)) filled.set(value, [given, out])
+  return out
+}
+
+const filled = new WeakMap<object, [Shape | undefined, unknown]>()
+
+function fill(given: Shape | undefined, value: unknown): unknown {
   const shape = branchOf(given, value)
   if (shape?.type !== 'object' || !shape.properties) return value
   if (value !== undefined && !isPlainObject(value)) return value
@@ -142,8 +153,17 @@ export function withGroups(given: Shape | undefined, value: unknown): unknown {
         (one) => one.items && !one.prefixItems,
       )
       if (list && !other) {
-        const rows = current.map((row) => (isPlainObject(row) ? withGroups(list.items, row) : row))
-        if (rows.some((row, i) => row !== current[i])) out = { ...out, [key]: rows }
+        let rows = filled.get(current)
+        if (rows?.[0] !== list) {
+          const made = current.map((row) =>
+            isPlainObject(row) ? withGroups(list.items, row) : row,
+          )
+          filled.set(
+            current,
+            (rows = [list, made.some((row, i) => row !== current[i]) ? made : current]),
+          )
+        }
+        if (rows[1] !== current) out = { ...out, [key]: rows[1] }
         continue
       }
     }

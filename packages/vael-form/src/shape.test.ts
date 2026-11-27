@@ -404,3 +404,38 @@ describe.each(
     scope.stop()
   })
 })
+
+it('does not look at a list’s rows again when an edit is elsewhere', async () => {
+  let reads = 0
+  const row = {
+    type: 'object',
+    required: ['note'],
+    get properties() {
+      reads++
+      return { note: { type: 'object', properties: { text: { type: 'string' } } } }
+    },
+  }
+  const shape = {
+    type: 'object',
+    properties: { name: { type: 'string' }, rows: { type: 'array', items: row } },
+  }
+  const schema: StandardSchemaV1 = {
+    '~standard': {
+      version: 1,
+      vendor: 'test',
+      validate: (value: unknown) => ({ value }),
+      jsonSchema: { input: () => shape, output: () => shape },
+    } as never,
+  }
+  const form = effectScope().run(() =>
+    useForm({ schema, defaultValues: { name: '', rows: Array.from({ length: 20 }, () => ({})) } }),
+  )!
+  void form.valid.value
+  await flush()
+  const before = reads
+  for (const name of ['a', 'ab', 'abc']) {
+    form.setValue('name' as never, name as never)
+    await flush()
+  }
+  expect(reads - before).toBe(0)
+})

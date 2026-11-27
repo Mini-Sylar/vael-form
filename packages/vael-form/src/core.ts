@@ -235,9 +235,7 @@ export class FormCore {
       this.limits = module.limitsAt
       this.limitsReady.value = true
     })
-    return this.limitsReady.value
-      ? this.limits!(root, segments, this.schema, this.values, this.scope)
-      : {}
+    return this.limitsReady.value ? this.limits!(root, segments, this.schema, this, this.scope) : {}
   }
 
   // ---- config
@@ -330,11 +328,30 @@ export class FormCore {
     return keys
   }
 
+  private rowsAt = new WeakMap<string[], Map<string, number>>()
+
+  /** The default at `segments` in `values`, boxed; none for a row added since, as a row's is found by its key. */
+  defaultAt(segments: Segments, values: unknown = this.latest): [unknown] | undefined {
+    let base = this.initial.value
+    for (const key of segments) {
+      if (Array.isArray(values) && Array.isArray(base) && isIndex(key)) {
+        const keys = this.keysOf(base)
+        let rows = this.rowsAt.get(keys)
+        if (!rows) this.rowsAt.set(keys, (rows = new Map(keys.map((row, i) => [row, i]))))
+        const at = rows.get(this.keysOf(values)[+key]!)
+        if (at === undefined) return
+        base = base[at]
+      } else base = getIn(base, [key])
+      values = getIn(values, [key])
+    }
+    return [base]
+  }
+
   /** `user` is false for a change the form makes (a reset), which `field.watch` doesn't report. */
   setValue = (path: string, value: unknown, user = true): void => {
     const segments = toSegments(path)
     // A list written whole lines up with the defaults' rows by position, as in setValues.
-    this.align(value, getIn(this.initial.value, segments))
+    this.align(value, this.defaultAt(segments)?.[0])
     const next = setIn(this.latest, segments, value, this.inheritKeys)
     if (user) {
       // A write that changes nothing is not an edit a watcher will be told about.
@@ -566,13 +583,8 @@ export class FormCore {
     const touched = under(this.touchedSet.value)
     if (mode === 'blur') return touched
     if (mode === 'edited') return touched && under(this.editedSet.value)
-    return (
-      touched ||
-      !isEqual(
-        getIn(this.values.value, toSegments(path)),
-        getIn(this.initial.value, toSegments(path)),
-      )
-    )
+    const segments = toSegments(path)
+    return touched || !isEqual(getIn(this.values.value, segments), this.defaultAt(segments)?.[0])
   }
 
   // ---- issues

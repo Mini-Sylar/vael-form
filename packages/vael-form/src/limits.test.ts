@@ -53,3 +53,30 @@ it('stops a union’s branch watcher with the form, not with the field that read
   await flush()
   expect(reads.count - before).toBe(0) // a stopped form's watchers are gone
 })
+
+it('reads no list row’s branch again on a keystroke elsewhere in the form', async () => {
+  await import('./limits')
+  const rows = z.object({ name: z.string(), pays: z.array(schema.shape.pay) })
+  const scope = effectScope()
+  const form = scope.run(() =>
+    useForm({
+      schema: rows,
+      defaultValues: {
+        name: '',
+        pays: Array.from({ length: 50 }, () => ({ type: 'card' })),
+      } as never,
+    }),
+  )!
+  const field = (path: string) => form.field(path as never) as { attrs: any; value: unknown }
+  scope.run(() =>
+    watchEffect(() => {
+      for (let i = 0; i < 50; i++) void field(`pays.${i}.amount`).attrs
+    }),
+  )
+  await flush()
+  const before = reads.count
+  for (const name of ['a', 'ab', 'abc']) field('name').value = name
+  await flush()
+  expect(reads.count - before).toBe(0)
+  scope.stop()
+})

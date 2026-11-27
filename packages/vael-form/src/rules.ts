@@ -2,7 +2,7 @@ import type { ShallowRef } from 'vue'
 import { groupIssues, messagesOf } from './issues'
 import { isSchema, schemaRule } from './schema-rule'
 import type { IssueMap, Message, RawIssue } from './issues'
-import { expand, getIn, isEqual, isIndex, toSegments } from './path'
+import { expand, getIn, isEqual, toSegments } from './path'
 import type { RuleContext, RuleInput, RuleResult } from './types'
 
 type Run = (value: unknown, context: RuleContext<unknown>) => RuleResult | Promise<RuleResult>
@@ -39,8 +39,7 @@ interface State {
 /** What the engine needs from the form. */
 export interface RuleHost {
   readonly latest: unknown
-  readonly initial: { readonly value: unknown }
-  keysOf(list: unknown[]): string[]
+  defaultAt(segments: readonly string[], values: unknown): [unknown] | undefined
 }
 
 const NONE = Symbol('none')
@@ -112,9 +111,10 @@ export class RuleEngine {
           )
         const segments = toSegments(path)
         const value = getIn(values, segments)
+        const base = this.host.defaultAt(segments, values)
         const blocked =
           schemaIssues.some((issue) => issue.path === path || issue.path.startsWith(`${path}.`)) ||
-          this.isDefault(values, segments)
+          (!!base && isEqual(value, base[0]))
         const recheck = state.recheck
         state.recheck = false
         if (blocked) {
@@ -206,25 +206,6 @@ export class RuleEngine {
     for (const state of this.states.values()) this.cancel(state)
     this.states.clear()
     this.publish()
-  }
-
-  private rows = new WeakMap<string[], Map<string, number>>()
-
-  /** Whether the value at `segments` is still its default: a row is matched by its key, so a new row has none. */
-  private isDefault(value: unknown, segments: readonly string[]): boolean {
-    let base = this.host.initial.value
-    for (const key of segments) {
-      if (Array.isArray(value) && Array.isArray(base) && isIndex(key)) {
-        const keys = this.host.keysOf(base)
-        let rows = this.rows.get(keys)
-        if (!rows) this.rows.set(keys, (rows = new Map(keys.map((row, i) => [row, i]))))
-        const at = rows.get(this.host.keysOf(value)[+key]!)
-        if (at === undefined) return false
-        base = base[at]
-      } else base = getIn(base, [key])
-      value = getIn(value, [key])
-    }
-    return isEqual(value, base)
   }
 
   private start(state: State, immediate: boolean): void {
