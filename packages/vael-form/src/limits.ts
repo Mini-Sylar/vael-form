@@ -49,10 +49,11 @@ const outputs = new WeakMap<object, Shape | undefined>()
 
 type Pick = (union: Shape, path: Segments) => Shape | undefined
 
-/** The form's values, as a ref and as read without tracking. */
+/** The form's values, as a ref and as read without tracking, and its schema now. */
 interface FormValues {
   readonly values: Ref<unknown>
   readonly latest: unknown
+  readonly schema: StandardSchemaV1
 }
 
 interface Choice {
@@ -63,16 +64,19 @@ interface Choice {
   pick: ShallowRef<Shape | undefined>
 }
 
+/** A form's unions and where they are, from the one schema it uses now (`schema`). */
+type Choices = Map<string, Choice> & { schema?: StandardSchemaV1 }
+
 // Each form's active branch per union and path, set only when it changes: other keystrokes don't reach attrs.
-const choices = new WeakMap<object, Map<string, Choice>>()
+const choices = new WeakMap<object, Choices>()
 let unions = 0
 
 const picker =
-  ({ values, latest }: FormValues, scope?: EffectScope): Pick =>
+  ({ values, latest, schema }: FormValues, scope?: EffectScope): Pick =>
   (union, path) => {
     let all = choices.get(values)
     if (!all && scope?.active) {
-      const made = (all = new Map())
+      const made: Choices = (all = new Map())
       choices.set(values, made)
       // One watcher per form, in its scope: it stops with the form, not with the component that read attrs first.
       scope.run(() =>
@@ -90,6 +94,11 @@ const picker =
     }
     // A form made outside a scope reads the values itself.
     if (!all) return branchOf(union, getIn(values.value, path))
+    // A new schema: attrs read it again, so the old one's unions need no watching.
+    if (all.schema !== schema) {
+      all.clear()
+      all.schema = schema
+    }
     const key = `${(union.id ??= ++unions)}:${path}`
     let one = all.get(key)
     if (!one) {
@@ -195,12 +204,12 @@ function attrsFor(
 export function limitsAt(
   root: Shape,
   segments: Segments,
-  schema: StandardSchemaV1,
   form: FormValues,
   scope?: EffectScope,
 ): Record<string, string | number | boolean> {
   const key = segments[segments.length - 1]
   if (key === undefined) return {}
+  const { schema } = form
   const pick = picker(form, scope)
   const outs = () => {
     if (!outputs.has(schema)) outputs.set(schema, shapeOf(schema, 'output'))

@@ -439,3 +439,26 @@ it('does not look at a list’s rows again when an edit is elsewhere', async () 
   }
   expect(reads - before).toBe(0)
 })
+
+it('fills a row’s groups again after an edit inside it, with one row object in two places', async () => {
+  const pay = z.discriminatedUnion('type', [
+    z.object({ type: z.literal('card'), card: z.object({ number: z.string().min(4, 'Short') }) }),
+    z.object({ type: z.literal('cash') }),
+  ])
+  const form = effectScope().run(() =>
+    useForm({
+      schema: z.object({ pay, rows: z.array(pay) }),
+      defaultValues: { pay: { type: 'cash' }, rows: [] } as never,
+    }),
+  )!
+  const row = { type: 'card' }
+  form.setValue('rows' as never, [row, row] as never)
+  form.setValue('pay' as never, row as never)
+  await form.validate()
+  const paths = () => form.allErrors.value.map((error) => error.path)
+  expect(paths()).toEqual(['pay.card.number', 'rows.0.card.number', 'rows.1.card.number'])
+  form.setValue('rows.0.type' as never, 'cash' as never)
+  form.setValue('rows.1.card.number' as never, '1234' as never)
+  await form.validate()
+  expect(paths()).toEqual(['pay.card.number'])
+})

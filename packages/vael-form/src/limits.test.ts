@@ -1,4 +1,4 @@
-import { effectScope, nextTick, watchEffect } from 'vue'
+import { effectScope, nextTick, shallowRef, watchEffect } from 'vue'
 import { expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { useForm } from './use-form'
@@ -78,5 +78,40 @@ it('reads no list row’s branch again on a keystroke elsewhere in the form', as
   for (const name of ['a', 'ab', 'abc']) field('name').value = name
   await flush()
   expect(reads.count - before).toBe(0)
+  scope.stop()
+})
+
+it('drops the branch watches of a schema the form no longer uses', async () => {
+  await import('./limits')
+  const make = () =>
+    z.object({
+      pay: z.discriminatedUnion('type', [
+        z.object({ type: z.literal('card'), amount: z.number().min(1) }),
+        z.object({ type: z.literal('cash'), amount: z.number().nullable() }),
+      ]),
+    })
+  const current = shallowRef(make())
+  const scope = effectScope()
+  const form = scope.run(() =>
+    useForm({ schema: current, defaultValues: { pay: { type: 'card' } } as never }),
+  )!
+  const field = (path: string) => form.field(path as never) as { attrs: any; value: unknown }
+  scope.run(() => watchEffect(() => void field('pay.amount').attrs))
+  await flush()
+  const reads0 = reads.count
+  field('pay.amount').value = 1
+  await flush()
+  const one = reads.count - reads0
+  for (let i = 0; i < 3; i++) {
+    current.value = make()
+    await flush()
+  }
+  const before = reads.count
+  field('pay.amount').value = 2
+  await flush()
+  expect(reads.count - before).toBe(one) // only the schema in use is watched
+  field('pay.type').value = 'cash'
+  await flush()
+  expect(field('pay.amount').attrs.min).toBeUndefined()
   scope.stop()
 })

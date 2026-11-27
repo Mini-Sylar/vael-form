@@ -235,7 +235,7 @@ export class FormCore {
       this.limits = module.limitsAt
       this.limitsReady.value = true
     })
-    return this.limitsReady.value ? this.limits!(root, segments, this.schema, this, this.scope) : {}
+    return this.limitsReady.value ? this.limits!(root, segments, this, this.scope) : {}
   }
 
   // ---- config
