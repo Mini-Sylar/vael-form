@@ -176,6 +176,17 @@ describe.each(Object.entries(schemas))('%s, with the app’s own catalog', (_, s
   })
 })
 
+it('counts a cleared control as not given when null goes in but a value must come out', async () => {
+  const required = {
+    zod: z.object({ age: z.number().int().min(1).nullable().pipe(z.number()) }),
+    valibot: v.object({ age: v.pipe(v.nullable(v.number()), v.number()) }),
+  }
+  for (const schema of Object.values(required)) {
+    const { text } = await errorsFor(schema, { age: null })
+    expect(text.age).toBe('Age is required')
+  }
+})
+
 describe('what the schema’s author wrote', () => {
   it('is shown as written', async () => {
     const zodOne = z.object({ name: z.string().min(3, 'Pick a longer name') })

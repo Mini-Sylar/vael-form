@@ -26,6 +26,13 @@ function withPipe(shape: Shape): Shape {
   return out
 }
 
+/** A `nullable` value's own shape: JSON Schema puts it in a union with `null`. */
+function withoutNull(shape: Shape): Shape {
+  const branches = shape.anyOf ?? shape.oneOf
+  const rest = branches?.filter((branch) => branch.type !== 'null')
+  return rest?.length === 1 && branches!.length === 2 ? rest[0]! : shape
+}
+
 /** The attributes a schema implies for an input: limits, and `aria-required` for a value that can't be left empty. */
 function attrsFor(
   given: Shape | undefined,
@@ -33,7 +40,7 @@ function attrsFor(
 ): Record<string, string | number | boolean> {
   const attrs: Record<string, string | number | boolean> = {}
   if (!given) return attrs
-  const shape = withPipe(given)
+  const shape = withPipe(withoutNull(given))
   const text = has(shape, 'string')
   // A string may be '' unless it has a minimum; a boolean is never "missing"; a list needs an item.
   if (
