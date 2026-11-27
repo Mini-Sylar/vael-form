@@ -72,7 +72,14 @@ const enabled = (el: HTMLElement) => el.tabIndex >= 0 && !el.matches(':disabled'
 function focus(el: HTMLElement | null): void {
   if (el && !enabled(el)) {
     const inside = [...el.querySelectorAll<HTMLInputElement>('*')].filter(enabled)
-    el = inside.find((input) => input.type === 'radio' && input.checked) ?? inside[0] ?? null
+    const to = inside.find((input) => input.type === 'radio' && input.checked) ?? inside[0]
+    // Nothing inside (an empty list): the wrapper itself, out of the tab order once left.
+    if (!to && !el.hasAttribute('tabindex')) {
+      const wrapper = el
+      wrapper.tabIndex = -1
+      wrapper.addEventListener('blur', () => wrapper.removeAttribute('tabindex'), { once: true })
+    }
+    el = to ?? el
   }
   el?.focus()
 }

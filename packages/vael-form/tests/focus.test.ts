@@ -3,6 +3,7 @@ import { $, flush } from './utils/dom'
 import { mount } from './utils/mount'
 import type { Mounted } from './utils/mount'
 import Choices from './fixtures/Choices.vue'
+import Options from './fixtures/Options.vue'
 
 let mounted: Mounted | undefined
 afterEach(() => mounted?.unmount())
@@ -41,5 +42,35 @@ describe('a failed submit whose first invalid field is a group', () => {
     expect(await form!.handleSubmit()).toBe(false)
     await flush()
     expect(document.activeElement).toBe(at('plan-pro'))
+  })
+})
+
+describe("a failed submit whose first invalid field is a list's own error", () => {
+  it('focuses the empty list, described by its error', async () => {
+    mounted = mount(Options)
+    await submit()
+    const list = at('options')!
+    expect(document.activeElement).toBe(list)
+    expect(list.getAttribute('aria-invalid')).toBe('true')
+    expect(document.getElementById(list.getAttribute('aria-describedby')!)!.textContent).toBe(
+      'Add an option',
+    )
+  })
+
+  it('does the same when submitted from code', async () => {
+    let form: { handleSubmit: () => Promise<boolean> } | undefined
+    mounted = mount(Options, { ready: (made: never) => (form = made) })
+    expect(await form!.handleSubmit()).toBe(false)
+    await flush()
+    expect(document.activeElement).toBe(at('options'))
+  })
+
+  it('leaves the list out of the tab order once focus moves on', async () => {
+    mounted = mount(Options)
+    await submit()
+    at('add')!.click()
+    await flush()
+    expect(document.activeElement).toBe(at('option-0'))
+    expect(at('options')!.hasAttribute('tabindex')).toBe(false)
   })
 })

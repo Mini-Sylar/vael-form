@@ -503,15 +503,27 @@ const list = form.field('members') // a list's rows and operations live on its f
 ```
 
 ```vue
-<div v-for="item in list.items" :key="item.key">
-  <input v-model="item.field.name.value" v-bind="item.field.name.attrs" />
-  <p>{{ item.field.name.error }}</p>
-  <button type="button" @click="list.remove(item.index)">Remove</button>
-</div>
-<button type="button" @click="list.push({ name: '' })">Add</button>
+<fieldset v-bind="list.attrs">
+  <legend>Members</legend>
+  <div v-for="item in list.items" :key="item.key">
+    <input v-model="item.field.name.value" v-bind="item.field.name.attrs" />
+    <p :id="item.field.name.attrs.errorId">{{ item.field.name.error }}</p>
+    <button type="button" @click="list.remove(item.index)">Remove</button>
+  </div>
+</fieldset>
+<p :id="list.attrs.errorId">{{ list.error }}</p>
+<button type="button" @click="add">Add</button>
 ```
 
-`push`, `insert`, `remove`, `move`, `swap`, `replace`. `item.key` is stable through edits and moves, and touched state follows the item. A row's `reset()` and `dirty` use its own default, wherever it has moved. The model's list is an array: `members.value.splice(1, 1)`, `push` or `sort` on it is a list change like these, with the keys, touched state and server errors following their rows.
+```ts
+async function add() {
+  list.push({ name: '' })
+  await nextTick() // then focus the new row's input, by the id its attrs give it
+  document.getElementById(list.items.at(-1)!.field.name.id)?.focus()
+}
+```
+
+The list's own error (`z.array(...).min(1, 'Add a member')`) goes with `list.attrs` on the element around the rows, as a checkbox group's does. A failed submit focuses its first row's first enabled control, or, when the list is empty, the wrapper itself, so a screen reader reads the error it is described by. `push`, `insert`, `remove`, `move`, `swap`, `replace`. `item.key` is stable through edits and moves, and touched state follows the item. A row's `reset()` and `dirty` use its own default, wherever it has moved. The model's list is an array: `members.value.splice(1, 1)`, `push` or `sort` on it is a list change like these, with the keys, touched state and server errors following their rows.
 
 ## Unions, tuples and dynamic schemas
 
