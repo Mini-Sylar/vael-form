@@ -85,6 +85,17 @@ describe('reactive initial', () => {
     await flush()
     expect(form.field('name').value).toBe('Grace')
   })
+
+  it('keeps a failed submit’s errors when a refetch brings the same data', async () => {
+    const loaded = shallowRef({ ...base, name: '' })
+    const form = make({ schema, defaultValues: loaded })
+    expect(await form.handleSubmit()).toBe(false)
+    await flush()
+    loaded.value = { ...base, name: '' } // a new object, the same data
+    await flush()
+    expect(form.submitCount.value).toBe(1)
+    expect(form.field('name').error).toBe('Too short')
+  })
 })
 
 describe('destructuring', () => {

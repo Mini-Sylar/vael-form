@@ -1,6 +1,7 @@
 import { isIndex } from './path'
 import type { Segments } from './path'
-import { has, shapeAt } from './shape'
+import type { StandardSchemaV1 } from '@standard-schema/spec'
+import { has, shapeAt, shapeOf } from './shape'
 import type { Shape } from './shape'
 
 // Its own chunk: the limits only matter once an input's attrs are read.
@@ -11,6 +12,8 @@ const VALIBOT_LIMITS: Record<string, keyof Shape> = {
   non_empty: 'minLength',
   min_value: 'minimum',
   max_value: 'maximum',
+  gt_value: 'exclusiveMinimum',
+  lt_value: 'exclusiveMaximum',
   multiple_of: 'multipleOf',
 }
 
@@ -18,10 +21,17 @@ const VALIBOT_LIMITS: Record<string, keyof Shape> = {
 function withPipe(shape: Shape): Shape {
   const out: Shape = { ...shape }
   for (const action of (shape.node?.pipe ?? []) as Record<string, any>[]) {
-    const key = VALIBOT_LIMITS[action.type]
-    if (key === 'minLength' && out.type === 'array') out.minItems = action.requirement ?? 1
-    else if (key) (out as Record<string, unknown>)[key] = action.requirement ?? 1
-    if (action.type === 'integer') out.type = 'integer'
+    const { type, requirement } = action
+    const key = VALIBOT_LIMITS[type]
+    // An exact `length` is both limits.
+    if (type === 'length') out.minLength = out.maxLength = requirement
+    if ((key === 'minLength' || type === 'length') && out.type === 'array')
+      out.minItems = requirement ?? 1
+    else if (key) (out as Record<string, unknown>)[key] = requirement ?? 1
+    if (type.endsWith('integer')) out.type = 'integer'
+    // `email`, `regex` and the like: a pattern that '' may not match.
+    if (requirement instanceof RegExp) out.pattern = requirement
+    if (type === 'url') out.format = 'uri'
   }
   return out
 }
@@ -33,20 +43,57 @@ function withoutNull(shape: Shape): Shape {
   return rest?.length === 1 && branches!.length === 2 ? rest[0]! : shape
 }
 
+const outputs = new WeakMap<object, Shape | undefined>()
+
+/** Whether a value that may be `null` comes out of the schema as something else, so empty still fails. */
+function nullRuledOut(given: Shape, schema: StandardSchemaV1, segments: Segments): boolean {
+  // Valibot: a schema later in the wrapper's pipe, such as `v.number()`, that takes no `null`.
+  if (given.nullable)
+    return (given.nullable.pipe ?? [])
+      .slice(1)
+      .some(
+        (item: Record<string, any>) =>
+          item.kind === 'schema' && !['nullable', 'nullish', 'any', 'unknown'].includes(item.type),
+      )
+  // Zod and ArkType: the output's JSON Schema. A transform or refine reads as "anything" or as nullable.
+  if (!outputs.has(schema)) outputs.set(schema, shapeOf(schema, 'output'))
+  const out = shapeAt(outputs.get(schema), segments)
+  return !!out && !!(out.type ?? out.anyOf ?? out.oneOf) && !has(out, 'null')
+}
+
+/** A bound that is only the safe-integer range (Zod's `.int()`) or infinite isn't a real limit. */
+const bound = (value: number | undefined) =>
+  value !== undefined && Math.abs(value) < Number.MAX_SAFE_INTEGER ? value : undefined
+
+/** A string the schema's format or pattern says can't be ''. */
+function notBlank(shape: Shape): boolean {
+  if (shape.format) return true
+  try {
+    return shape.pattern !== undefined && !new RegExp(shape.pattern).test('')
+  } catch {
+    return false
+  }
+}
+
 /** The attributes a schema implies for an input: limits, and `aria-required` for a value that can't be left empty. */
 function attrsFor(
   given: Shape | undefined,
   required: boolean,
+  schema: StandardSchemaV1,
+  segments: Segments,
 ): Record<string, string | number | boolean> {
   const attrs: Record<string, string | number | boolean> = {}
   if (!given) return attrs
+  // A value that takes `null` takes "empty", unless the schema turns `null` away after all.
+  if ((has(given, 'null') || given.nullable) && !nullRuledOut(given, schema, segments))
+    required = false
   const shape = withPipe(withoutNull(given))
   const text = has(shape, 'string')
-  // A string may be '' unless it has a minimum; a boolean is never "missing"; a list needs an item.
+  // A string may be '' unless its minimum, format or pattern says no; a boolean is never "missing"; a list needs an item.
   if (
     required &&
     !has(shape, 'boolean') &&
-    (!text || (shape.minLength ?? 0) > 0) &&
+    (!text || (shape.minLength ?? 0) > 0 || notBlank(shape)) &&
     (!has(shape, 'array') || (shape.minItems ?? 0) > 0)
   )
     attrs['aria-required'] = true
@@ -55,8 +102,12 @@ function attrsFor(
     if (shape.maxLength !== undefined) attrs.maxlength = shape.maxLength
   }
   if (has(shape, 'number') || has(shape, 'integer')) {
-    if (shape.minimum !== undefined) attrs.min = shape.minimum
-    if (shape.maximum !== undefined) attrs.max = shape.maximum
+    // An integer's exclusive bound is the next whole number; a decimal's has no HTML form.
+    const step = has(shape, 'integer') ? 1 : NaN
+    const min = bound(shape.minimum ?? (shape.exclusiveMinimum ?? NaN) + step)
+    const max = bound(shape.maximum ?? (shape.exclusiveMaximum ?? NaN) - step)
+    if (min !== undefined) attrs.min = min
+    if (max !== undefined) attrs.max = max
     if (shape.multipleOf !== undefined) attrs.step = shape.multipleOf
   }
   return attrs
@@ -76,6 +127,7 @@ function requiredAt(root: Shape | undefined, segments: Segments): boolean {
 export function limitsAt(
   root: Shape,
   segments: Segments,
+  schema: StandardSchemaV1,
 ): Record<string, string | number | boolean> {
-  return attrsFor(shapeAt(root, segments), requiredAt(root, segments))
+  return attrsFor(shapeAt(root, segments), requiredAt(root, segments), schema, segments)
 }

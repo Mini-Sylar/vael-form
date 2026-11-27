@@ -57,6 +57,12 @@ function size(
   return { keys: keysFor(prefix, small ? 'too_small' : 'too_big', origin, required), params }
 }
 
+/** A whole number is a type, as in Zod 4: `invalidType.int`. */
+const int = (prefix: string): Described => ({
+  keys: keysFor(prefix, 'invalid_type', 'int'),
+  params: { expected: 'int' },
+})
+
 function originOf(input: unknown): string {
   if (typeof input === 'string') return 'string'
   if (Array.isArray(input)) return 'array'
@@ -119,13 +125,15 @@ function zod(issue: Loose, prefix: string, value: unknown): Described | undefine
   if (issue.options) params.values = plain(issue.options)
   if (issue.multipleOf !== undefined) params.divisor = issue.multipleOf
   if (code === 'invalid_type') {
+    // Zod 3 expects an `integer` where Zod 4 expects an `int`.
+    const expected = issue.expected === 'integer' ? 'int' : String(issue.expected)
     // The value itself says what is missing; a message can't (Zod Mini's is just "Invalid input").
     const missing =
       value === undefined ||
       value === null ||
       issue.received === 'undefined' ||
-      unfilled(value, String(issue.expected))
-    return { keys: keysFor(prefix, code, String(issue.expected), missing), params }
+      unfilled(value, expected)
+    return { keys: keysFor(prefix, code, expected, missing), params: { ...params, expected } }
   }
   if (code === 'too_small' || code === 'too_big')
     return size(
@@ -174,9 +182,18 @@ function valibot(issue: Loose, prefix: string): Described | undefined {
       params: { ...params, expected: type },
     }
   }
+  if (type.endsWith('integer')) return int(prefix)
   if (type === 'non_empty') return size(prefix, true, originOf(issue.input), 1, params)
+  const unit = type.slice(4)
   if (/^(min|max)_/.test(type))
-    return size(prefix, type.startsWith('min_'), originOf(issue.input), requirement, params)
+    return size(
+      prefix,
+      type.startsWith('min_'),
+      // Words and bytes aren't characters.
+      unit === 'words' || unit === 'bytes' ? unit : originOf(issue.input),
+      requirement,
+      params,
+    )
   if (type === 'multiple_of')
     return { keys: keysFor(prefix, 'not_multiple_of'), params: { ...params, divisor: requirement } }
   if (typeof requirement !== 'number')
@@ -230,7 +247,10 @@ function arktype(issue: Loose, prefix: string): Described | undefined {
     case 'before':
       return size(prefix, false, originOf(data), rule)
     case 'divisor':
-      return { keys: keysFor(prefix, 'not_multiple_of'), params: { divisor: plain(rule) } }
+      // `number.integer` is a divisor of 1.
+      return rule === 1
+        ? int(prefix)
+        : { keys: keysFor(prefix, 'not_multiple_of'), params: { divisor: plain(rule) } }
     case 'pattern': {
       const format = arkFormat(expected)
       return { keys: keysFor(prefix, 'invalid_format', format), params: { format } }

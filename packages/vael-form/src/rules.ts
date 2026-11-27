@@ -184,6 +184,8 @@ export class RuleEngine {
     clearTimeout(state.timer)
     state.timer = undefined
     state.status = 'running'
+    // A new try forgets the last one's failure.
+    state.error = undefined
     const run = ++state.run
     const abort = (state.abort = new AbortController())
     const { value, path } = state

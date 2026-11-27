@@ -1,0 +1,16 @@
+---
+'vael-form': patch
+---
+
+## Fixes
+
+- **`aria-required` on a nullable field:** a field that takes `null`, such as `z.number().nullable()`, Valibot's `v.nullable(...)` or ArkType's `'number | null'`, accepts an empty answer, so it no longer gets `aria-required`. A field whose schema turns `null` away again, such as `.nullable().pipe(z.number())`, keeps it. A `.refine()` or `.transform()` that rejects `null` can't be read from the schema, so that field gets none.
+- **`aria-required` on an email or a URL:** a required string whose format or pattern turns `''` away, such as `z.email()`, `v.pipe(v.string(), v.url())` or ArkType's `'string.email'`, now gets `aria-required`.
+- **No `min`/`max` from Zod's `.int()`:** `z.number().int()` no longer puts `min` and `max` of ±9007199254740991 on `attrs`. A bound that is only the safe-integer range, or infinite, is left off; a real bound such as `.min(1)` stays.
+- **An integer's exclusive bounds:** `.positive()`, `.gt()` and `.lt()` on an integer (Valibot's `gtValue` and `ltValue`, ArkType's `'0 < number.integer < 10'`) now give `min` and `max`: the next whole number inside the bound.
+- **Valibot limits:** `v.length(4)` gives `minlength` and `maxlength` (`aria-required` for a list), `v.safeInteger()` counts as an integer, and a field in `v.exactOptional`, `v.nonOptional`, `v.nonNullable` or `v.nonNullish` gets its limits and the right `aria-required`. A Valibot group that may be `null` and is missing from the values is no longer filled in as `{}`, so it shows one error for the group, as Zod's does.
+- **One message for a whole number:** an integer check in Zod 3, Valibot and ArkType now uses your catalog's `invalidType.int`, as Zod 4's does. Before, ArkType said "must be a multiple of 1", Valibot used `invalidFormat` and Zod 3 `invalidType.default`.
+- **Words and bytes:** Valibot's `minWords`, `maxWords`, `minBytes` and `maxBytes` no longer use the "characters" message; they fall back to `tooSmall.default` and `tooBig.default` (or `tooSmall.words`, `tooBig.bytes` and the like, if your catalog has them).
+- **A rule that failed, then passed:** after a rule threw (the network was down), a submit that runs it again and gets an answer now goes through. Before, it threw the old error again.
+- **List keys after a model push:** a row added or cut at the end through `model` (`members.value.push(row)`) keeps the other rows' `item.key`, so `v-for` doesn't remount them.
+- **A refetch with the same data:** `defaultValues` that load again with equal data no longer reset the form, so a failed submit's errors stay on screen.

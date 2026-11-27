@@ -62,6 +62,7 @@ const rules = {
   tooSmallNumber: 'Qty must be at least 2',
   tooBigNumber: 'Cap must be at most 10',
   option: 'Choose one of the available options for Role',
+  int: 'Count must be a whole number',
 }
 
 const initial = {
@@ -74,6 +75,7 @@ const initial = {
   qty: 1,
   cap: 11,
   role: 'z',
+  count: 1.5,
 }
 
 const schemas: Record<string, StandardSchemaV1> = {
@@ -87,6 +89,7 @@ const schemas: Record<string, StandardSchemaV1> = {
     qty: z.number().min(2),
     cap: z.number().max(10),
     role: z.enum(['a', 'b']),
+    count: z.number().int(),
   }),
   zodMini: zm.object({
     name: zm.string().check(zm.minLength(3)),
@@ -98,6 +101,7 @@ const schemas: Record<string, StandardSchemaV1> = {
     qty: zm.number().check(zm.gte(2)),
     cap: zm.number().check(zm.lte(10)),
     role: zm.enum(['a', 'b']),
+    count: zm.int(),
   }),
   zod3: z3.object({
     name: z3.string().min(3),
@@ -109,6 +113,7 @@ const schemas: Record<string, StandardSchemaV1> = {
     qty: z3.number().min(2),
     cap: z3.number().max(10),
     role: z3.enum(['a', 'b']),
+    count: z3.number().int(),
   }),
   valibot: v.object({
     name: v.pipe(v.string(), v.minLength(3)),
@@ -120,6 +125,7 @@ const schemas: Record<string, StandardSchemaV1> = {
     qty: v.pipe(v.number(), v.minValue(2)),
     cap: v.pipe(v.number(), v.maxValue(10)),
     role: v.picklist(['a', 'b']),
+    count: v.pipe(v.number(), v.integer()),
   }),
   arktype: type({
     name: 'string >= 3',
@@ -131,6 +137,7 @@ const schemas: Record<string, StandardSchemaV1> = {
     qty: 'number >= 2',
     cap: 'number <= 10',
     role: "'a' | 'b'",
+    count: 'number.integer',
   }) as unknown as StandardSchemaV1,
 }
 
@@ -146,6 +153,7 @@ describe.each(Object.entries(schemas))('%s, with the app’s own catalog', (_, s
     expect(text.qty).toBe(rules.tooSmallNumber)
     expect(text.cap).toBe(rules.tooBigNumber)
     expect(text.role).toBe(rules.option)
+    expect(text.count).toBe(rules.int) // the same key in every library
   })
 
   it('counts a choice not made, or a cleared select, as not given', async () => {
@@ -185,6 +193,16 @@ it('counts a cleared control as not given when null goes in but a value must com
     const { text } = await errorsFor(schema, { age: null })
     expect(text.age).toBe('Age is required')
   }
+})
+
+it('does not call words or bytes characters', async () => {
+  const schema = v.object({
+    bio: v.pipe(v.string(), v.minWords('en', 3)),
+    note: v.pipe(v.string(), v.maxBytes(2)),
+  })
+  const { text } = await errorsFor(schema, { bio: 'one', note: 'abc' })
+  expect(text.bio).toBe('Bio is too small (minimum 3)')
+  expect(text.note).toBe('Note is too large (maximum 2)')
 })
 
 describe('what the schema’s author wrote', () => {

@@ -177,7 +177,7 @@ A group of checkboxes or radios has one `id` and one error, so `attrs.x` goes on
 
 ### Limits from the schema
 
-`attrs` also carries what the schema says about the input: `minlength` and `maxlength` for text, `min`, `max` and `step` for numbers, and `aria-required` for a value that can't be left empty (a required string with a minimum, a required number; not a boolean, nor a plain string, which may be `''`). A `maxlength` stops the typing at the limit, so that error rarely needs showing. It works with Zod 4, Valibot and ArkType (not Zod Mini or Zod 3, which can't describe their schemas), and its code is a small chunk loaded when attrs are first read.
+`attrs` also carries what the schema says about the input: `minlength` and `maxlength` for text, `min`, `max` and `step` for numbers, and `aria-required` for a value that can't be left empty (a required string with a minimum or a format such as an email or a URL, a required number; not a boolean, nor a plain string, which may be `''`, nor a value that takes `null`). A bound that is only the safe-integer range, as Zod's `.int()` adds, isn't put on the input, and an integer's `.positive()` or `.lt(10)` becomes `min="1"` or `max="9"`. A `maxlength` stops the typing at the limit, so that error rarely needs showing. It works with Zod 4, Valibot and ArkType (not Zod Mini or Zod 3, which can't describe their schemas), and its code is a small chunk loaded when attrs are first read.
 
 ## Component libraries
 
@@ -191,7 +191,7 @@ A group of checkboxes or radios has one `id` and one error, so `attrs.x` goes on
 
 A library that lets a passed `id` replace its own would lose its label. There, spread only what it needs: `:name="attrs.email.name" @focusout="attrs.email.onFocusout"`.
 
-A control that can be emptied writes `null`: a number input you clear, a `clearable` select, a date picker. A field's model is its schema's input, or `undefined` until set, so give that field a schema that takes `null`. Use `.nullable()` when empty is a valid answer. When the field is required, add `.pipe(z.number())`: `null` then fails with the field's "required" message, and the limits still reach `attrs`.
+A control that can be emptied writes `null`: a number input you clear, a `clearable` select, a date picker. A field's model is its schema's input, or `undefined` until set, so give that field a schema that takes `null`. Use `.nullable()` when empty is a valid answer. When the field is required, add `.pipe(z.number())`: `null` then fails with the field's "required" message, and `attrs` keeps its limits and `aria-required`. A `.refine()` or `.transform()` that turns `null` away can't be read from the schema, so that field gets no `aria-required`.
 
 ```ts
 seats: z.number().int().min(1).nullable().pipe(z.number()), // required

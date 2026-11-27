@@ -195,7 +195,8 @@ export class FormCore {
       watch(
         () => snapshot(toValue(source)),
         (next) => {
-          if (!this.dirty) this.reset(next ?? {})
+          // The same data again (a refetch) keeps what the user has seen, errors and all.
+          if (!this.dirty && !isEqual(next ?? {}, this.initial.value)) this.reset(next ?? {})
         },
       )
   }
@@ -232,7 +233,7 @@ export class FormCore {
       this.limits = module.limitsAt
       this.limitsReady.value = true
     })
-    return this.limitsReady.value ? this.limits!(root, segments) : {}
+    return this.limitsReady.value ? this.limits!(root, segments, this.schema) : {}
   }
 
   // ---- config
@@ -309,8 +310,10 @@ export class FormCore {
 
   keysOf(array: unknown[]): string[] {
     let keys = this.keys.get(array)
-    if (!keys || keys.length !== array.length) {
-      keys = array.map(() => `${this.id}-${++this.keyCount}`)
+    if (keys?.length !== array.length) {
+      // A row added or cut at the end (`push`, `length`) leaves the others' keys alone.
+      const old = keys
+      keys = array.map((_, i) => old?.[i] ?? this.newKey())
       this.keys.set(array, keys)
     }
     return keys

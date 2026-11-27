@@ -228,6 +228,26 @@ describe('rules and submit', () => {
     expect(form.submitting.value).toBe(false)
   })
 
+  it('submits once a rule that threw passes on the next try', async () => {
+    let down = true
+    let submitted = 0
+    const form = make({
+      schema,
+      defaultValues: defaults,
+      onSubmit: () => void submitted++,
+      rules: {
+        username: () => {
+          if (down) throw new Error('network down')
+        },
+      },
+    })
+    form.field('username').value = 'grace'
+    await expect(form.handleSubmit()).rejects.toThrow('network down')
+    down = false
+    expect(await form.handleSubmit()).toBe(true) // the old failure is not thrown again
+    expect(submitted).toBe(1)
+  })
+
   it('validate(path) settles only that path', async () => {
     const calls: string[] = []
     const form = make({

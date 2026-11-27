@@ -16,24 +16,39 @@ export interface Shape {
   maxLength?: number
   minimum?: number
   maximum?: number
+  exclusiveMinimum?: number
+  exclusiveMaximum?: number
+  format?: string
+  /** A JSON Schema pattern, or a Valibot action's own RegExp. */
+  pattern?: string | RegExp
   multipleOf?: number
   minItems?: number
   /** Valibot's own schema, whose pipe holds its limits. */
   node?: Loose
+  /** Valibot's `nullable` or `nullish` wrapper around this value, whose pipe can rule `null` out. */
+  nullable?: Loose
 }
+
+// Valibot's wrappers whose key may be left out of its object.
+const OPTIONAL = ['optional', 'exact_optional', 'nullish', 'undefinedable']
 
 // Valibot has no JSON Schema of its own: its schemas are plain objects, read here the same way.
 // `node` keeps the Valibot schema, for the limits in its pipe (read by the `limits` chunk).
 function fromValibot(schema: Loose): Shape | undefined {
   const type = schema.type as string
-  if (['optional', 'nullable', 'nullish', 'undefinedable'].includes(type))
-    return fromValibot(schema.wrapped)
+  // `non_nullable` and the like take back the `null` the wrapper inside them allowed.
+  const non = type.startsWith('non_')
+  if (non || type === 'nullable' || type === 'nullish') {
+    const inner = fromValibot(schema.wrapped)
+    return inner && { ...inner, nullable: non ? undefined : schema }
+  }
+  if (OPTIONAL.includes(type)) return fromValibot(schema.wrapped)
   if (type.endsWith('object')) {
     const properties: Record<string, Shape> = {}
     const required: string[] = []
     for (const [key, entry] of Object.entries(schema.entries as Loose)) {
       properties[key] = fromValibot(entry) ?? {}
-      if (!['optional', 'nullish', 'undefinedable'].includes(entry.type)) required.push(key)
+      if (!OPTIONAL.includes(entry.type)) required.push(key)
     }
     return { type: 'object', properties, required }
   }
@@ -46,10 +61,10 @@ function fromValibot(schema: Loose): Shape | undefined {
 }
 
 /** The schema's shape, when its library can say: Zod and ArkType through JSON Schema, Valibot read directly. */
-export function shapeOf(schema: StandardSchemaV1): Shape | undefined {
+export function shapeOf(schema: StandardSchemaV1, side = 'input'): Shape | undefined {
   const standard = schema['~standard'] as Loose
   try {
-    const shape = standard.jsonSchema?.input({
+    const shape = standard.jsonSchema?.[side]({
       target: 'draft-2020-12',
       // A date or a transform has no JSON Schema: it reads as "anything", not as a failure.
       libraryOptions: { unrepresentable: 'any' },
@@ -97,7 +112,8 @@ export function withGroups(shape: Shape | undefined, value: unknown): unknown {
   for (const [key, child] of Object.entries(shape.properties)) {
     const current = out?.[key]
     const missing = current === undefined && !!shape.required?.includes(key)
-    if (child.type !== 'object' || (!missing && !isPlainObject(current))) continue
+    // A missing group that may be `null` (Valibot's `nullable`) isn't made, as Zod's isn't.
+    if (child.type !== 'object' || (missing ? child.nullable : !isPlainObject(current))) continue
     const next = withGroups(child, missing ? {} : current)
     if (next !== current) out = { ...out, [key]: next }
   }

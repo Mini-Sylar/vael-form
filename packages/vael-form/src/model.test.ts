@@ -87,6 +87,15 @@ describe('form.model', () => {
     expect(tags.value.includes('b')).toBe(true)
   })
 
+  it('a row pushed through the model keeps the other rows’ keys', () => {
+    const form = make()
+    const list = form.field('members')
+    const before = list.items.map((item) => item.key)
+    form.model.members.value.push({ name: 'Linus' })
+    expect(list.items.map((item) => item.key).slice(0, 1)).toEqual(before)
+    expect(list.items).toHaveLength(2)
+  })
+
   it('does not look like a Vue ref or reactive object where it should not', () => {
     const form = make()
     const { address, members } = form.model

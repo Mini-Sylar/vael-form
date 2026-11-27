@@ -103,6 +103,133 @@ it('keeps the limits of a value that may be null', async () => {
   }
 })
 
+describe.each(
+  Object.entries({
+    zod: z.object({
+      limit: z.number().nullable(),
+      code: z.string().min(2).nullable(),
+      seats: z.number().int().min(1).nullable().pipe(z.number()),
+      later: z
+        .number()
+        .nullable()
+        .transform((value) => value ?? 0),
+    }),
+    valibot: v.object({
+      limit: v.nullable(v.number()),
+      code: v.nullish(v.pipe(v.string(), v.minLength(2))),
+      seats: v.pipe(v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))), v.number()),
+      later: v.pipe(
+        v.nullable(v.number()),
+        v.transform((value) => value ?? 0),
+      ),
+    }),
+    arktype: type({
+      limit: 'number | null',
+      code: 'string >= 2 | null',
+      seats: type('number.integer >= 1 | null').to('number'),
+      later: type('number | null').pipe((value) => value ?? 0),
+    }),
+  }),
+)('%s: a value that may be null', (_, schema) => {
+  it('is not required, unless the schema turns null away', async () => {
+    const form = effectScope().run(() => useForm({ schema: schema as never }))!
+    const attrs = form.attrs as Record<string, any>
+    void attrs.limit
+    await flush()
+    expect(attrs.limit['aria-required']).toBeUndefined()
+    expect(attrs.code['aria-required']).toBeUndefined()
+    expect(attrs.code.minlength).toBe(2)
+    expect(attrs.seats).toMatchObject({ min: 1, 'aria-required': true })
+    expect(attrs.later['aria-required']).toBeUndefined() // a transform can't say
+  })
+})
+
+describe.each(
+  Object.entries({
+    zod: z.object({ count: z.number().int(), seats: z.number().int().min(1) }),
+    valibot: v.object({
+      count: v.pipe(v.number(), v.safeInteger()),
+      seats: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(Infinity)),
+    }),
+    arktype: type({ count: 'number.safe', seats: 'number.safe >= 1' }),
+  }),
+)('%s: an integer', (_, schema) => {
+  it('has no min or max for the safe-integer range, and keeps a real bound', async () => {
+    const form = effectScope().run(() => useForm({ schema: schema as never }))!
+    const attrs = form.attrs as Record<string, any>
+    void attrs.count
+    await flush()
+    expect(attrs.count.min).toBeUndefined()
+    expect(attrs.count.max).toBeUndefined()
+    expect(attrs.seats.min).toBe(1)
+    expect(attrs.seats.max).toBeUndefined()
+  })
+})
+
+describe.each(
+  Object.entries({
+    zod: z.object({
+      email: z.email(),
+      site: z.url(),
+      code: z.string().regex(/^[A-Z]*$/),
+      seats: z.number().int().positive().lt(10),
+    }),
+    valibot: v.object({
+      email: v.pipe(v.string(), v.email()),
+      site: v.pipe(v.string(), v.url()),
+      code: v.pipe(v.string(), v.regex(/^[A-Z]*$/)),
+      seats: v.pipe(v.number(), v.safeInteger(), v.gtValue(0), v.ltValue(10)),
+    }),
+    arktype: type({
+      email: 'string.email',
+      site: 'string.url',
+      code: /^[A-Z]*$/,
+      seats: '0 < number.integer < 10',
+    }),
+  }),
+)('%s: formats and exclusive bounds', (_, schema) => {
+  it('requires a string whose format turns "" away, and moves an integer’s exclusive bounds in', async () => {
+    const form = effectScope().run(() => useForm({ schema: schema as never }))!
+    const attrs = form.attrs as Record<string, any>
+    void attrs.email
+    await flush()
+    expect(attrs.email['aria-required']).toBe(true)
+    expect(attrs.site['aria-required']).toBe(true)
+    expect(attrs.code['aria-required']).toBeUndefined() // '' matches the pattern
+    expect(attrs.seats).toMatchObject({ min: 1, max: 9 })
+  })
+})
+
+it('reads Valibot’s other wrappers and its exact length', async () => {
+  const schema = v.object({
+    nick: v.exactOptional(v.pipe(v.string(), v.minLength(2))),
+    name: v.nonOptional(v.optional(v.pipe(v.string(), v.minLength(2), v.maxLength(9)))),
+    city: v.nonNullable(v.nullable(v.pipe(v.string(), v.minLength(1)))),
+    pin: v.pipe(v.string(), v.length(4)),
+    pair: v.pipe(v.array(v.string()), v.length(2)),
+  })
+  const form = effectScope().run(() => useForm({ schema }))!
+  const attrs = form.attrs as Record<string, any>
+  void attrs.nick
+  await flush()
+  expect(attrs.nick['aria-required']).toBeUndefined()
+  expect(attrs.nick.minlength).toBe(2)
+  expect(attrs.name).toMatchObject({ minlength: 2, maxlength: 9, 'aria-required': true })
+  expect(attrs.city).toMatchObject({ minlength: 1, 'aria-required': true })
+  expect(attrs.pin).toMatchObject({ minlength: 4, maxlength: 4, 'aria-required': true })
+  expect(attrs.pair['aria-required']).toBe(true)
+})
+
+it('doesn’t make a missing Valibot group that may be null', async () => {
+  const schema = v.object({
+    address: v.nullable(v.object({ street: v.pipe(v.string(), v.minLength(1)) })),
+  })
+  const form = effectScope().run(() => useForm({ schema, defaultValues: {} }))!
+  void form.valid.value
+  await flush()
+  expect(form.allErrors.value.map((error) => error.path)).toEqual(['address'])
+})
+
 it('a plain form without a schema library just has no limits', () => {
   const form = effectScope().run(() =>
     useForm({ defaultValues: { name: '' }, validate: { name: (v) => !v && 'Required' } }),
