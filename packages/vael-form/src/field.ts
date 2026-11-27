@@ -117,12 +117,10 @@ export class FieldImpl {
     this.watch = (handler, options) => core.watchField(path, handler, options)
     this.validate = () => core.validate(path)
     this.reset = (...value) => {
-      core.setValue(
-        path,
-        // The defaults themselves (never changed in place): a list keeps its rows' keys.
-        value.length ? value[0] : core.defaultAt(segments)?.[0],
-        false,
-      )
+      // The defaults themselves (never changed in place): a list keeps its rows' keys.
+      const to = value.length ? ([value[0]] as const) : core.defaultAt(segments)
+      // A row added since the defaults has none, so it keeps its value.
+      if (to) core.setValue(path, to[0], false)
       core.untouch(path, true)
     }
 

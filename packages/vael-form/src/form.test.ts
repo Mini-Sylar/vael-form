@@ -573,6 +573,20 @@ describe('arrays', () => {
     expect(form.field('members.2').dirty).toBe(true)
   })
 
+  it('keeps a row that has no default on reset, and clears its touched and edited state', () => {
+    const form = make({ schema, defaultValues: { members: [{ name: 'a' }] } })
+    form.field('members').push({ name: 'd' })
+    form.field('members.1.name').value = 'e'
+    form.field('members.1.name').touch()
+    form.field('members.1.name').reset()
+    expect(form.values.value.members).toEqual([{ name: 'a' }, { name: 'e' }])
+    expect(form.field('members.1.name').touched).toBe(false)
+    form.field('members.1').reset()
+    expect(form.values.value.members).toEqual([{ name: 'a' }, { name: 'e' }])
+    // A row with no default still compares with undefined, so it stays dirty.
+    expect(form.field('members.1').dirty).toBe(true)
+  })
+
   it('shows a list-level error once an item is touched', async () => {
     const listed = z.object({ tags: z.array(z.string()).min(2, 'Two tags') })
     const form = make({ schema: listed, defaultValues: { tags: ['a'] }, showErrors: 'blur' })
