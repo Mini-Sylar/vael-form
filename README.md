@@ -191,6 +191,15 @@ A group of checkboxes or radios has one `id` and one error, so `attrs.x` goes on
 
 A library that lets a passed `id` replace its own would lose its label. There, spread only what it needs: `:name="attrs.email.name" @focusout="attrs.email.onFocusout"`.
 
+A control that can be emptied writes `null`: a number input you clear, a `clearable` select, a date picker. A field's model is its schema's input, or `undefined` until set, so give that field a schema that takes `null`. Use `.nullable()` when empty is a valid answer. When the field is required, add `.pipe(z.number())`: `null` then fails with the field's "required" message, and the limits still reach `attrs`.
+
+```ts
+seats: z.number().int().min(1).nullable().pipe(z.number()), // required
+limit: z.number().nullable(), // optional
+```
+
+Without it, vue-tsc with `strictTemplates` rejects the `v-model`, because the control can write `null` and the field can't hold it.
+
 ## Transforming values
 
 Transforms live in the schema, and `onSubmit` gets what they return:

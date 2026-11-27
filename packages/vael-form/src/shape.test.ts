@@ -81,6 +81,28 @@ describe.each(Object.entries(schemas))('%s', (_, schema) => {
   })
 })
 
+it('keeps the limits of a value that may be null', async () => {
+  const nullable = {
+    zod: z.object({
+      seats: z.number().int().min(1).max(50).nullable().pipe(z.number()),
+      code: z.string().min(2).max(8).nullable(),
+    }),
+    valibot: v.object({
+      seats: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(50))),
+      code: v.nullable(v.pipe(v.string(), v.minLength(2), v.maxLength(8))),
+    }),
+    arktype: type({ seats: '1 <= number.integer <= 50 | null', code: '2 <= string <= 8 | null' }),
+  }
+  for (const schema of Object.values(nullable)) {
+    const form = effectScope().run(() => useForm({ schema: schema as never }))!
+    const attrs = form.attrs as Record<string, any>
+    void attrs.seats
+    await flush()
+    expect(attrs.seats).toMatchObject({ min: 1, max: 50 })
+    expect(attrs.code).toMatchObject({ minlength: 2, maxlength: 8 })
+  }
+})
+
 it('a plain form without a schema library just has no limits', () => {
   const form = effectScope().run(() =>
     useForm({ defaultValues: { name: '' }, validate: { name: (v) => !v && 'Required' } }),
