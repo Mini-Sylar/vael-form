@@ -166,6 +166,27 @@ export class RuleEngine {
       if (under(state.path) && state.error !== undefined) throw state.error
   }
 
+  /** A list change moved rows: each state follows its row, and a removed row's is cancelled. */
+  move(to: (path: string) => string | null): void {
+    const states = new Map<string, State>()
+    const busy = new Set<string>()
+    for (const state of this.states.values()) {
+      const path = to(state.path)
+      if (path === null) {
+        this.cancel(state)
+        continue
+      }
+      const key = state.key.slice(0, state.key.indexOf('|') + 1) + path
+      if (this.busy.value.has(state.key)) busy.add(key)
+      Object.assign(state, { key, path })
+      states.set(key, state)
+    }
+    this.states.clear()
+    for (const [key, state] of states) this.states.set(key, state)
+    this.busy.value = busy
+    this.publish()
+  }
+
   /** Forgets every answer: the values were replaced. */
   clear(): void {
     for (const state of this.states.values()) this.cancel(state)

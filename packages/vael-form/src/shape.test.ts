@@ -274,3 +274,44 @@ it('a plain form without a schema library just has no limits', () => {
     'onFocusout',
   ])
 })
+
+describe.each(
+  Object.entries({
+    zod: z.object({
+      pay: z.discriminatedUnion('type', [
+        z.object({ type: z.literal('card'), amount: z.number().min(1) }),
+        z.object({ type: z.literal('cash'), amount: z.number().nullable() }),
+      ]),
+    }),
+    valibot: v.object({
+      pay: v.variant('type', [
+        v.object({ type: v.literal('card'), amount: v.pipe(v.number(), v.minValue(1)) }),
+        v.object({ type: v.literal('cash'), amount: v.nullable(v.number()) }),
+      ]),
+    }),
+    arktype: type({
+      pay: type({ type: "'card'", amount: 'number >= 1' }).or({
+        type: "'cash'",
+        amount: 'number | null',
+      }),
+    }) as unknown as StandardSchemaV1,
+  }),
+)('%s: a union whose branches share a key', (_, schema) => {
+  it('reads the active branch, and requires a key no branch is picked for only if all do', async () => {
+    const form = effectScope().run(() =>
+      useForm({ schema: schema as never, defaultValues: { pay: { type: 'card' } } as never }),
+    )!
+    const pay = form.field('pay.type' as never) as { value: unknown }
+    const attrs = form.attrs as Record<string, any>
+    void attrs.pay.amount
+    await flush()
+    expect(attrs.pay.amount).toMatchObject({ min: 1, 'aria-required': true })
+    pay.value = 'cash'
+    await flush()
+    expect(attrs.pay.amount['aria-required']).toBeUndefined() // `cash` takes null
+    expect(attrs.pay.amount.min).toBeUndefined()
+    pay.value = undefined
+    await flush()
+    expect(attrs.pay.amount['aria-required']).toBeUndefined() // one branch takes null
+  })
+})

@@ -186,6 +186,76 @@ describe('rules', () => {
     await flush()
     expect(form.valid.value).toBe(true)
   })
+
+  it('keeps a row’s answer when a list change moves it, and checks only changed rows', async () => {
+    const seen: string[] = []
+    const form = make({
+      schema,
+      defaultValues: defaults,
+      showErrors: 'input',
+      rules: {
+        'members.*.email': async (value) => {
+          seen.push(value)
+          return value.startsWith('bad') ? 'Not allowed' : undefined
+        },
+      },
+    })
+    await warm(form)
+    const members = form.field('members')
+    members.push({ email: 'a@x.co' })
+    members.push({ email: 'bad@x.co' })
+    members.push({ email: 'c@x.co' })
+    await flush()
+    expect(seen.toSorted()).toEqual(['a@x.co', 'bad@x.co', 'c@x.co'])
+
+    seen.length = 0
+    members.remove(0)
+    await flush()
+    members.move(0, 1)
+    await flush()
+    expect(seen).toEqual([]) // the rows moved, their values didn't change
+    expect(members.items[1]!.field.email.error).toBe('Not allowed') // the answer moved too
+
+    members.insert(0, { email: 'd@x.co' })
+    await flush()
+    expect(seen).toEqual(['d@x.co'])
+
+    form.field('members.2.email').value = 'e@x.co'
+    await flush()
+    expect(seen).toEqual(['d@x.co', 'e@x.co'])
+    expect(form.valid.value).toBe(true)
+  })
+
+  it('a moved row keeps its pending run; a removed row’s is aborted', async () => {
+    const runs: { value: string; signal: AbortSignal }[] = []
+    const form = make({
+      schema,
+      defaultValues: defaults,
+      showErrors: 'input',
+      rules: {
+        'members.*.email': async (value, { signal }) => {
+          runs.push({ value, signal })
+          await wait(30)
+          return value.startsWith('bad') ? 'Not allowed' : undefined
+        },
+      },
+    })
+    await warm(form)
+    const members = form.field('members')
+    members.push({ email: 'a@x.co' })
+    members.push({ email: 'bad@x.co' })
+    await flush()
+    expect(runs.length).toBe(2)
+    members.remove(0)
+    await flush()
+    expect(runs.map((run) => [run.value, run.signal.aborted])).toEqual([
+      ['a@x.co', true],
+      ['bad@x.co', false],
+    ]) // no new run for the row that moved up
+    expect(members.items[0]!.field.email.pending).toBe(true)
+    await flush(40)
+    expect(members.items[0]!.field.email.error).toBe('Not allowed')
+  })
 })
 
 describe('rules and submit', () => {

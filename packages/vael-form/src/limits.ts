@@ -1,7 +1,7 @@
 import { isIndex } from './path'
 import type { Segments } from './path'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import { has, shapeAt, shapeOf } from './shape'
+import { branchOf, child, has, shapeOf } from './shape'
 import type { Shape } from './shape'
 
 // Its own chunk: the limits only matter once an input's attrs are read.
@@ -45,8 +45,21 @@ function withoutNull(shape: Shape): Shape {
 
 const outputs = new WeakMap<object, Shape | undefined>()
 
+/** The shapes the parent of the last key may have: a union's active branch (by its discriminators), else each branch. */
+function parents(shape: Shape | undefined, segments: Segments, value: () => any): Shape[] {
+  const branches = shape?.anyOf ?? shape?.oneOf
+  if (branches) {
+    // Values are read only at a union, so a form without one doesn't redo attrs on each change.
+    const active = branchOf(shape, value())
+    return (active === shape ? branches : [active!]).flatMap((one) => parents(one, segments, value))
+  }
+  if (!shape || segments.length < 2) return shape ? [shape] : []
+  const [key, ...rest] = segments
+  return parents(child(shape, key!), rest, () => value()?.[key!])
+}
+
 /** Whether a value that may be `null` comes out of the schema as something else, so empty still fails. */
-function nullRuledOut(given: Shape, schema: StandardSchemaV1, segments: Segments): boolean {
+function nullRuledOut(given: Shape, outs: () => (Shape | undefined)[]): boolean {
   // Valibot: a schema later in the wrapper's pipe, such as `v.number()`, that takes no `null`.
   if (given.nullable)
     return (given.nullable.pipe ?? [])
@@ -55,10 +68,12 @@ function nullRuledOut(given: Shape, schema: StandardSchemaV1, segments: Segments
         (item: Record<string, any>) =>
           item.kind === 'schema' && !['nullable', 'nullish', 'any', 'unknown'].includes(item.type),
       )
-  // Zod and ArkType: the output's JSON Schema. A transform or refine reads as "anything" or as nullable.
-  if (!outputs.has(schema)) outputs.set(schema, shapeOf(schema, 'output'))
-  const out = shapeAt(outputs.get(schema), segments)
-  return !!out && !!(out.type ?? out.anyOf ?? out.oneOf) && !has(out, 'null')
+  // Zod and ArkType: the output's JSON Schema, in each branch the value may be in; a transform reads as "anything".
+  const list = outs()
+  return (
+    !!list[0] &&
+    list.every((out) => !!out && !!(out.type ?? out.anyOf ?? out.oneOf) && !has(out, 'null'))
+  )
 }
 
 /** A bound that is only the safe-integer range (Zod's `.int()`) or infinite isn't a real limit. */
@@ -81,14 +96,12 @@ function notBlank(shape: Shape): boolean {
 function attrsFor(
   given: Shape | undefined,
   required: boolean,
-  schema: StandardSchemaV1,
-  segments: Segments,
+  outs: () => (Shape | undefined)[],
 ): Record<string, string | number | boolean> {
   const attrs: Record<string, string | number | boolean> = {}
   if (!given) return attrs
   // A value that takes `null` takes "empty", unless the schema turns `null` away after all.
-  if ((has(given, 'null') || given.nullable) && !nullRuledOut(given, schema, segments))
-    required = false
+  if ((has(given, 'null') || given.nullable) && !nullRuledOut(given, outs)) required = false
   const shape = withPipe(withoutNull(given))
   const text = has(shape, 'string')
   // A string may be '' unless its minimum, format or pattern says no; a boolean is never "missing"; a list needs an item.
@@ -116,21 +129,25 @@ function attrsFor(
   return attrs
 }
 
-/** Whether the key at the end of `segments` must be there, by its parent's `required`. */
-function requiredAt(root: Shape | undefined, segments: Segments): boolean {
-  if (!segments.length) return false
-  const parent = shapeAt(root, segments.slice(0, -1))
-  const key = segments[segments.length - 1]!
-  if (isIndex(key)) return true
-  const branches = parent ? [parent, ...(parent.anyOf ?? []), ...(parent.oneOf ?? [])] : []
-  return branches.some((branch) => branch.required?.includes(key))
-}
-
-/** The attributes the schema implies for the input at `segments`. */
+/** The attributes the schema implies for the input at `segments`, read from the union branch `values` are in. */
 export function limitsAt(
   root: Shape,
   segments: Segments,
   schema: StandardSchemaV1,
+  values: () => unknown,
 ): Record<string, string | number | boolean> {
-  return attrsFor(shapeAt(root, segments), requiredAt(root, segments), schema, segments)
+  const key = segments[segments.length - 1]
+  if (key === undefined) return {}
+  const outs = () => {
+    if (!outputs.has(schema)) outputs.set(schema, shapeOf(schema, 'output'))
+    return parents(outputs.get(schema), segments, values).map((parent) => child(parent, key))
+  }
+  // With no branch picked: the first branch's limits, and `aria-required` only if every branch has it.
+  const all = parents(root, segments, values).flatMap((parent) => {
+    const given = child(parent, key)
+    return given ? [attrsFor(given, isIndex(key) || !!parent.required?.includes(key), outs)] : []
+  })
+  const attrs = { ...all[0] }
+  if (!all.every((one) => one['aria-required'])) delete attrs['aria-required']
+  return attrs
 }

@@ -85,7 +85,7 @@ export const has = (shape: Shape | undefined, type: string): boolean =>
     !![...(shape.anyOf ?? []), ...(shape.oneOf ?? [])].some((branch) => has(branch, type)))
 
 /** A child's shape: an object's property (in any branch of a union) or a list's item. */
-function child(shape: Shape | undefined, key: string): Shape | undefined {
+export function child(shape: Shape | undefined, key: string): Shape | undefined {
   if (!shape) return undefined
   if (isIndex(key) && shape.items) return shape.items
   if (shape.properties?.[key]) return shape.properties[key]
@@ -106,7 +106,7 @@ export const isObjectShape = (shape: Shape | undefined): boolean => has(shape, '
 export const isListShape = (shape: Shape | undefined): boolean => has(shape, 'array')
 
 /** The one branch of a union whose discriminators (its `const` properties) the value matches. */
-function branchOf(shape: Shape | undefined, value: unknown): Shape | undefined {
+export function branchOf(shape: Shape | undefined, value: unknown): Shape | undefined {
   const fits = (shape?.anyOf ?? shape?.oneOf)?.filter(
     (branch) =>
       branch.properties &&

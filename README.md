@@ -143,6 +143,7 @@ useForm({
 ```
 
 - Paths complete from the schema; `*` stands for a list index: `'members.*.email'`.
+- A list change (`remove`, `move`, `insert`, or `splice` on the model) moves each row's answer and pending call with it, so a row is checked again only when its value changes. A removed row's call is aborted.
 - A rule gets the value, and `{ values, path, signal }`. It returns a message, a list, or nothing. A message can be `msg('errors.taken')`, so it translates.
 - It runs when the schema has no error at that path (a badly formatted email never calls your API), and not for a value that is still the default one (an edit form doesn't check the address the user already has).
 - `debounce` waits for the last change. A change aborts the earlier call (`signal`) and only the newest answer is used.
@@ -514,7 +515,7 @@ const list = form.field('members') // a list's rows and operations live on its f
 
 ## Unions, tuples and dynamic schemas
 
-- A discriminated union has the fields of every branch (`attrs.number`, `attrs.iban`), and the schema validates the active one. Values of the other branch are kept, so switching back restores them; the submitted values only contain the active branch. A group in the active branch (`card.number`) shows its fields' errors before the data has it, in a list's rows too.
+- A discriminated union has the fields of every branch (`attrs.number`, `attrs.iban`), and the schema validates the active one. Values of the other branch are kept, so switching back restores them; the submitted values only contain the active branch. A group in the active branch (`card.number`) shows its fields' errors before the data has it, in a list's rows too. Its `attrs` come from the active branch too, so `aria-required` and the limits follow `type`; before a branch is picked, a field gets `aria-required` only if every branch requires it.
 - A tuple is one field (`Field<[Date, Date]>`), with its positions as paths (`range.0`).
 - A nullable value is `Field<string | null>`; a recursive schema works, and its paths are checked to twelve levels.
 - `schema` can be a ref, for forms built from data: a new schema validates the same values again.

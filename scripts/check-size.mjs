@@ -12,7 +12,7 @@ const budgets = {
   rules: 1536,
   catalog: 1856,
   validator: 1280,
-  limits: 1056,
+  limits: 1184,
   schemaRule: 512,
   nuxt: 1024,
 }

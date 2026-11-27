@@ -233,7 +233,9 @@ export class FormCore {
       this.limits = module.limitsAt
       this.limitsReady.value = true
     })
-    return this.limitsReady.value ? this.limits!(root, segments, this.schema) : {}
+    return this.limitsReady.value
+      ? this.limits!(root, segments, this.schema, () => this.values.value)
+      : {}
   }
 
   // ---- config
@@ -450,6 +452,8 @@ export class FormCore {
       this.revealedSet.value = remapSet(this.revealedSet.value, prefix, remap)
       this.editedSet.value = remapSet(this.editedSet.value, prefix, remap)
       this.freshSet.value = remapSet(this.freshSet.value, prefix, remap)
+      // A rule's last answer and pending run follow the row, so an unchanged row isn't checked again.
+      this.engine?.move((key) => remapKey(key, prefix, remap))
       if (this.serverMap.value.size) {
         const shifted = new Map<string, readonly RawIssue[]>()
         for (const [key, list] of this.serverMap.value) {
